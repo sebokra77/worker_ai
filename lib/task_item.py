@@ -225,16 +225,35 @@ def fetch_remote_batch(
     cursor_local = conn_local.cursor()
     cursor_remote = conn_remote.cursor()
 
+    total_count = 0
+    marker_max_id = 0
+
     try:
-        # Aktualizacja etapu synchronizacji na FETCH
-        update_task_stage_and_markers(
-            cursor_local,
-            id_task,
-            int(task.get('marker_max_id') or 0),
-            'fetch',
-            None,
-        )
-        conn_local.commit()
+        # Walidacja istnienia kolumny klucza głównego w tabeli zewnętrznej
+        if db_type == 'mssql':
+            validation_query = (
+                f"SELECT TOP 1 {id_column} AS remote_id, {text_column} AS text_value "
+                f"FROM {table} ORDER BY {id_column} ASC"
+            )
+        else:
+            validation_query = (
+                f"SELECT {id_column} AS remote_id, {text_column} AS text_value "
+                f"FROM {table} ORDER BY {id_column} ASC LIMIT 1"
+            )
+        cursor_remote.execute(validation_query)
+        validation_row = cursor_remote.fetchone()
+        if validation_row is not None:
+            remote_id_value = extract_single_value(validation_row, 'remote_id')
+            if remote_id_value is None:
+                raise ValueError(
+                    "Nie odnaleziono kolumny identyfikatora w tabeli źródłowej."
+                )
+
+        # Wyznaczenie łącznej liczby rekordów do pobrania
+        count_query = f"SELECT COUNT(*) AS total_count FROM {table}"
+        cursor_remote.execute(count_query)
+        count_row = cursor_remote.fetchone()
+        total_count = int(extract_single_value(count_row, 'total_count') or 0)
 
         # Pobranie maksymalnego ID ze źródła
         max_query = f"SELECT MAX({id_column}) AS max_id FROM {table}"
@@ -242,29 +261,25 @@ def fetch_remote_batch(
         max_row = cursor_remote.fetchone()
         marker_max_id = int(extract_single_value(max_row, 'max_id') or 0)
 
-        records_total = None
-        if (task.get('records_fetched') or 0) == 0 and (task.get('records_total') or 0) == 0:
-            records_total = marker_max_id
-
-        update_task_stage_and_markers(cursor_local, id_task, marker_max_id, 'fetch', records_total)
+        update_task_stage_and_markers(cursor_local, id_task, marker_max_id, 'fetch', total_count)
         conn_local.commit()
 
         marker_id = int(task.get('marker_id') or 0)
-        if marker_max_id <= marker_id:
-            msg = f"Brak nowych rekordów do importu (1) — aktualne dane są już zsynchronizowane " \
-                  f"(marker_id={marker_id}, marker_max_id={marker_max_id})"
+        no_new_records = marker_max_id <= marker_id
+        if no_new_records:
+            msg = (
+                "Brak nowych rekordów do importu (1) — aktualne dane są już zsynchronizowane "
+                f"(marker_id={marker_id}, marker_max_id={marker_max_id})"
+            )
             append_task_description(cursor_local, id_task, msg)
             print(msg)
             conn_local.commit()
-            return
-
         should_increment_new = (task.get('records_fetched') or 0) == 0
         current_marker = marker_id
-
-        while current_marker < marker_max_id:
+        while not no_new_records and current_marker < marker_max_id:
             fetch_query, fetch_params = build_fetch_query(
                 db_type,
-                table, 
+                table,
                 id_column,
                 text_column,
                 batch_size,
@@ -331,9 +346,27 @@ def fetch_remote_batch(
             if should_increment_new and inserted_count > 0:
                 should_increment_new = False
             current_marker = last_remote_id
-
             if len(row_dicts) < batch_size:
                 break
+
+        # Uaktualnienie liczników po zakończeniu cyklu
+        cursor_local.execute(
+            "SELECT COUNT(*) AS fetched_total FROM task_item WHERE id_task = %s",
+            (id_task,),
+        )
+        local_total_row = cursor_local.fetchone()
+        local_total = int(extract_single_value(local_total_row, 'fetched_total') or 0)
+        records_fetched_value = local_total
+
+        update_columns = "records_fetched = %s, records_total = %s"
+        params: List[Any] = [records_fetched_value, total_count]
+        if records_fetched_value == total_count:
+            update_columns += ", sync_stage = 'done'"
+
+        update_final_sql = f"UPDATE task SET {update_columns} WHERE id_task = %s"
+        params.append(id_task)
+        cursor_local.execute(update_final_sql, tuple(params))
+        conn_local.commit()
     except Exception as error:  # noqa: BLE001
         conn_local.rollback()
         append_task_error(cursor_local, id_task, str(error))
