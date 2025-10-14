@@ -5,6 +5,7 @@ from lib.db_utils import setup_logger
 from lib.db_local import connect_local
 from lib.db_remote import connect_remote
 from lib.task import get_next_task, get_remote_db_params
+from lib.task_item import fetch_remote_batch
 
 def main():
     # Załaduj konfigurację i logger
@@ -48,12 +49,17 @@ def main():
     logger.info(f"Nawiązano połączenie z bazą zewnętrzną typu: {remote_params['db_type']}")
     print("OK")
 
-    # Tutaj można dodać dalszą logikę synchronizacji (compare/update)
-    # np. import z lib.task_item
-
-    logger.info("Synchronizacja zakończona.")
-    conn_local.close()
-    conn_remote.close()
+    # Pobierz i zapisz partię rekordów do task_item
+    try:
+        fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
+    except Exception as error:  # noqa: BLE001
+        logger.error("Synchronizacja zakończona błędem: %s", error)
+    else:
+        logger.info("Synchronizacja zakończona.")
+    finally:
+        cursor_local.close()
+        conn_local.close()
+        conn_remote.close()
 
 if __name__ == "__main__":
     main()
