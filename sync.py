@@ -55,15 +55,23 @@ def main():
     print("OK")
 
     print("Rozpoczynam synchronizację ...")
-    # Pobierz i zapisz partię rekordów do task_item
-    try:
-        fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
-    except Exception as error:  # noqa: BLE001
-        logger.error("Synchronizacja zakończona błędem: %s", error)
-        print(f"Synchronizacja zakończona błędem")
+    # Wywołaj pobieranie tylko dla etapów new lub fetch
+    if task.get('sync_stage') in {"new", "fetch"}:
+        try:
+            fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
+        except Exception as error:  # noqa: BLE001
+            logger.error("Synchronizacja zakończona błędem: %s", error)
+            print("Synchronizacja zakończona błędem")
+        else:
+            logger.info("Synchronizacja zakończona.")
+            print("Synchronizacja zakończona.")
     else:
-        logger.info("Synchronizacja zakończona.")
-        print(f"Synchronizacja zakończona.")
+        logger.info(
+            "Pominięto pobieranie rekordów dla zadania ID=%s na etapie %s.",
+            task.get('id_task'),
+            task.get('sync_stage'),
+        )
+        print("Pominięto pobieranie rekordów dla tego etapu zadania.")
     finally:
         cursor_local.close()
         conn_local.close()
