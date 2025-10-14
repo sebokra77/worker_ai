@@ -20,19 +20,23 @@ def main():
     logger.info("=== Rozpoczęcie synchronizacji ===")
 
     # Połączenie z bazą lokalną
+    print("Łącznie z DB local ...", end="")
     conn_local = connect_local(cfg)
     if not conn_local:
         logger.error("Nie udało się połączyć z bazą lokalną.")
+        print(" Error")
         sys.exit(1)
+    print(" OK")
     
     cursor_local = conn_local.cursor(dictionary=True)
 
     # Pobierz zadanie do wykonania
     print("Pobieranie taska ...")
     task = get_next_task(cursor_local)
-    print(task)
+    #print(task)
     if not task:
         logger.info("Brak zadań do synchronizacji.")
+        print("Brak zadań do synchronizacji.")
         return
 
     logger.info(f"Pobrano zadanie ID={task['id_task']} z bazy {task['id_database_connection']}")
@@ -41,21 +45,25 @@ def main():
     remote_params = get_remote_db_params(cursor_local, task['id_database_connection'])
     if not remote_params:
         logger.error(f"Nie znaleziono konfiguracji bazy zewnętrznej ID={task['id_database_connection']}")
+        print(f"Nie znaleziono konfiguracji bazy zewnętrznej ID={task['id_database_connection']}")
         return
 
     # Nawiąż połączenie z bazą zewnętrzną
-    print("Łącznie z DB remote ...", end="")
+    print("Łącznie z DB remote : ", end="")
     conn_remote = connect_remote(remote_params)
     logger.info(f"Nawiązano połączenie z bazą zewnętrzną typu: {remote_params['db_type']}")
     print("OK")
 
+    print("Rozpoczynam synchronizację ...")
     # Pobierz i zapisz partię rekordów do task_item
     try:
         fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
     except Exception as error:  # noqa: BLE001
         logger.error("Synchronizacja zakończona błędem: %s", error)
+        print(f"Synchronizacja zakończona błędem")
     else:
         logger.info("Synchronizacja zakończona.")
+        print(f"Synchronizacja zakończona.")
     finally:
         cursor_local.close()
         conn_local.close()

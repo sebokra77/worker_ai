@@ -251,7 +251,10 @@ def fetch_remote_batch(
 
         marker_id = int(task.get('marker_id') or 0)
         if marker_max_id <= marker_id:
-            append_task_description(cursor_local, id_task, 'Brak nowych rekordów do importu.')
+            msg = f"Brak nowych rekordów do importu (1) — aktualne dane są już zsynchronizowane " \
+                  f"(marker_id={marker_id}, marker_max_id={marker_max_id})"
+            append_task_description(cursor_local, id_task, msg)
+            print(msg)
             conn_local.commit()
             return
 
@@ -261,7 +264,7 @@ def fetch_remote_batch(
         while current_marker < marker_max_id:
             fetch_query, fetch_params = build_fetch_query(
                 db_type,
-                table,
+                table, 
                 id_column,
                 text_column,
                 batch_size,
@@ -272,7 +275,10 @@ def fetch_remote_batch(
             rows = cursor_remote.fetchall()
             row_dicts = rows_to_dicts(cursor_remote, rows)
             if not row_dicts:
-                append_task_description(cursor_local, id_task, 'Brak nowych rekordów do importu.')
+                msg = f"Brak nowych rekordów do importu (2) — zapytanie nie zwróciło danych " \
+                      f"(current_marker={current_marker}, marker_max_id={marker_max_id})"
+                append_task_description(cursor_local, id_task, msg)
+                print(msg)
                 conn_local.commit()
                 break
 
