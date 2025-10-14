@@ -193,6 +193,144 @@ def build_fetch_query(
     return query, params
 
 
+def resynch_remote_batch(
+    conn_local,
+    conn_remote,
+    task: Dict[str, Any],
+    batch_size: int,
+    remote_params: Dict[str, Any],
+    logger,
+) -> None:
+    """Porównuje dane zdalne z lokalnymi i aktualizuje zmienione rekordy.
+
+    Args:
+        conn_local: Połączenie z bazą lokalną MySQL.
+        conn_remote: Połączenie z bazą zewnętrzną.
+        task (dict[str, Any]): Informacje o zadaniu synchronizacji.
+        batch_size (int): Maksymalna liczba rekordów pobieranych w jednej partii.
+        remote_params (dict[str, Any]): Parametry połączenia z bazą zewnętrzną.
+        logger: Logger do zapisywania komunikatów diagnostycznych.
+    """
+
+    id_task = task['id_task']
+    db_type = remote_params.get('db_type', 'mysql')
+    table = sanitize_identifier(task['table_name'])
+    id_column = sanitize_identifier(task['id_column_name'])
+    text_column = sanitize_identifier(task['column_name'])
+    hash_method = (task.get('hash_method') or 'sha256').lower()
+
+    cursor_local = conn_local.cursor()
+    cursor_remote = conn_remote.cursor()
+
+    updated_total = 0
+    # W resynchronizacji korzystamy z istniejącego markera wyliczonego przy pobieraniu
+    marker_max_id = int(task.get('marker_max_id') or 0)
+    # Postęp w ramach paczek przechowujemy w kolumnie ``marker_id``
+    current_marker = int(task.get('marker_id') or 0)
+    if current_marker >= marker_max_id:
+        # Jeżeli poprzedni proces ukończył zakres to rozpoczynamy od zera
+        current_marker = 0
+
+    try:
+        while current_marker < marker_max_id:
+            fetch_query, fetch_params = build_fetch_query(
+                db_type,
+                table,
+                id_column,
+                text_column,
+                batch_size,
+                current_marker,
+            )
+            cursor_remote.execute(fetch_query, fetch_params)
+            rows = cursor_remote.fetchall()
+            row_dicts = rows_to_dicts(cursor_remote, rows)
+
+            valid_rows = [row for row in row_dicts if row.get('remote_id') is not None]
+            if not valid_rows:
+                if not row_dicts:
+                    break
+                current_marker += batch_size
+                continue
+
+            remote_ids = [int(row['remote_id']) for row in valid_rows]
+            placeholders = ','.join(['%s'] * len(remote_ids))
+            select_sql = (
+                f"SELECT remote_id, text_original FROM task_item "
+                f"WHERE id_task = %s AND remote_id IN ({placeholders})"
+            )
+            params_local = (id_task,) + tuple(remote_ids)
+            cursor_local.execute(select_sql, params_local)
+            local_rows = cursor_local.fetchall()
+            local_map = {int(row[0]): row[1] for row in local_rows}
+
+            updates: List[Tuple[Any, ...]] = []
+            for row in valid_rows:
+                remote_id = int(row['remote_id'])
+                text_value = row.get('text_value')
+                remote_text = text_value if text_value is not None else ''
+                local_text = local_map.get(remote_id)
+                local_text = local_text if local_text is not None else ''
+                if remote_text != local_text:
+                    original_hash = calculate_hash(remote_text, hash_method)
+                    updates.append((remote_text, original_hash, id_task, remote_id))
+
+            last_remote_id = int(valid_rows[-1]['remote_id'])
+
+            conn_local.start_transaction()
+            log_message = None
+            if updates:
+                update_sql = (
+                    "UPDATE task_item SET text_original = %s, original_hash = %s, fetched_at = NOW() "
+                    "WHERE id_task = %s AND remote_id = %s"
+                )
+                cursor_local.executemany(update_sql, updates)
+                update_task_sql = (
+                    "UPDATE task SET records_updated = records_updated + %s, marker_id = %s WHERE id_task = %s"
+                )
+                cursor_local.execute(update_task_sql, (len(updates), last_remote_id, id_task))
+                log_message = (
+                    "Resynchronizacja: zaktualizowano {count} rekordów (zakres_remote_id {first}-{last})."
+                    .format(count=len(updates), first=remote_ids[0], last=remote_ids[-1])
+                )
+                append_task_description(cursor_local, id_task, log_message)
+                updated_total += len(updates)
+            else:
+                # Aktualizujemy marker nawet przy braku zmian w partii
+                cursor_local.execute(
+                    "UPDATE task SET marker_id = %s WHERE id_task = %s",
+                    (last_remote_id, id_task),
+                )
+
+            conn_local.commit()
+            if log_message:
+                logger.info(log_message)
+
+            current_marker = last_remote_id
+            if len(valid_rows) < batch_size:
+                break
+
+        summary_message = (
+            f"Resynchronizacja zakończona. Zaktualizowano {updated_total} rekordów."
+        )
+        append_task_description(cursor_local, id_task, summary_message)
+        # Aktualizacja statusu zadania po zakończeniu resynchronizacji
+        cursor_local.execute(
+            "UPDATE task SET sync_stage = 'done', marker_id = %s WHERE id_task = %s",
+            (marker_max_id, id_task),
+        )
+        conn_local.commit()
+        logger.info(summary_message)
+    except Exception as error:  # noqa: BLE001
+        conn_local.rollback()
+        append_task_error(cursor_local, id_task, str(error))
+        conn_local.commit()
+        logger.exception("Błąd podczas resynchronizacji rekordów")
+        raise
+    finally:
+        cursor_local.close()
+        cursor_remote.close()
+
+
 def fetch_remote_batch(
     conn_local,
     conn_remote,
