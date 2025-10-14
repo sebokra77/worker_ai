@@ -43,8 +43,10 @@ def main():
         return
 
     # Nawiąż połączenie z bazą zewnętrzną
+    print("Łącznie z DB remote ...", end="")
     conn_remote = connect_remote(remote_params)
     logger.info(f"Nawiązano połączenie z bazą zewnętrzną typu: {remote_params['db_type']}")
+    print("OK")
 
     # Tutaj można dodać dalszą logikę synchronizacji (compare/update)
     # np. import z lib.task_item
@@ -55,3 +57,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
