@@ -1,0 +1,19 @@
+# Obsługa plików .env (konfiguracja)
+python-dotenv
+
+# Obsługa baz danych
+mysql-connector-python
+pyodbc
+psycopg2-binary
+# SQLite obsługiwane natywnie (moduł wbudowany w Python)
+
+# Logowanie, czas, hash – wbudowane w standardową bibliotekę (logging, hashlib, datetime)
+
+
+# Obsługa wyjątków i ułatwienia developerskie
+rich
+
+# === Narzędzia developerskie (opcjonalne) ===
+pytest
+mypy
+black
