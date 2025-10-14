@@ -5,7 +5,7 @@ from lib.db_utils import setup_logger
 from lib.db_local import connect_local
 from lib.db_remote import connect_remote
 from lib.task import get_next_task, get_remote_db_params
-from lib.task_item import fetch_remote_batch
+from lib.task_item import fetch_remote_batch, resynch_remote_batch
 
 def main():
     # Załaduj konfigurację i logger
@@ -55,9 +55,20 @@ def main():
     print("OK")
 
     print("Rozpoczynam synchronizację ...")
-    # Wywołaj pobieranie tylko dla etapów new lub fetch
-    if task.get('sync_stage') in {"new", "fetch"}:
+    stage = task.get('sync_stage')
+
+    if stage in {"new", "fetch"}:
         try:
+            fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
+        except Exception as error:  # noqa: BLE001
+            logger.error("Synchronizacja zakończona błędem: %s", error)
+            print("Synchronizacja zakończona błędem")
+        else:
+            logger.info("Synchronizacja zakończona.")
+            print("Synchronizacja zakończona.")
+    elif stage in {"resynch"}:
+        try:
+            resynch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
             fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
         except Exception as error:  # noqa: BLE001
             logger.error("Synchronizacja zakończona błędem: %s", error)
@@ -69,13 +80,13 @@ def main():
         logger.info(
             "Pominięto pobieranie rekordów dla zadania ID=%s na etapie %s.",
             task.get('id_task'),
-            task.get('sync_stage'),
+            stage,
         )
         print("Pominięto pobieranie rekordów dla tego etapu zadania.")
-    finally:
-        cursor_local.close()
-        conn_local.close()
-        conn_remote.close()
+
+    cursor_local.close()
+    conn_local.close()
+    conn_remote.close()
 
 if __name__ == "__main__":
     main()
