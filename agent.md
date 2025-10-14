@@ -24,7 +24,8 @@ Oba skrypty bedą miały plik konfiguracje .env
 - twórz opisy funkcji które tworzysz w stadardzie Google Style (w języku polskim)
 - nie opieraj się na klasach tylko na bibliotekach (nie programuj obiektowo) - tworz bibioteki (importuj je w ramach glownego skryptu)
 - chce wywoływać jako skrypt sync.py lub ai.py - w przyszłości chcę kolejkować wywołanie skryptów 
-- nie używaj  sqlalchemy szybkie zapytania SQL jawne zgodne z MySQL 
+- nie używaj  sqlalchemy szybkie zapytania SQL jawne zgodne z MySQL
+- połacznei edo baz danych tylko za pomoca TCP/IP nie używaj pipe
 - nazy zewnetrze moga być jako enum('mysql', 'mssql', 'pgsql', 'sqlite') - uwzględnij to przy połaczeniu z bazą zewnetrzną
 - zrobić własną prostą klasę do MySQL  (połącznie init, query, execute, close...). 
 - w ramach sktyptu trzamaj połączenie do bazy lokanej i zdalnej.
