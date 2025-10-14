@@ -13,6 +13,11 @@ psycopg2-binary
 # Obsługa wyjątków i ułatwienia developerskie
 rich
 
+# Klienci AI
+openai
+google-generativeai
+anthropic
+
 # === Narzędzia developerskie (opcjonalne) ===
 pytest
 mypy
