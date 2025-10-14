@@ -4,10 +4,10 @@
 Oba skrypty bedą miały plik konfiguracje .env
 ```
 	# Parametry lokalnej bazy danych MySQL
-	DB_LOCAL_HOST=192.168.2.5
+	DB_LOCAL_HOST=x.x.x.x
 	DB_LOCAL_PORT=3306
-	DB_LOCAL_USER=root	
-	DB_LOCAL_PASSWORD=seba00
+	DB_LOCAL_USER=xxxx	
+	DB_LOCAL_PASSWORD=xxxxxx
 	DB_LOCAL_NAME=ailexia
 
 	# Ustawienia aplikacji
