@@ -9,8 +9,8 @@ def get_next_task(cursor):
     cursor.execute(sql)
     return cursor.fetchone()
 
-def get_remote_db_params(cursor, id_database):
+def get_remote_db_params(cursor, id_database_connection):
     """Pobiera parametry połączenia z tabeli database_connection"""
-    sql = "SELECT * FROM database_connection WHERE id_database=%s"
-    cursor.execute(sql, (id_database,))
+    sql = "SELECT * FROM database_connection WHERE id_database_connection=%s"
+    cursor.execute(sql, (id_database_connection,))
     return cursor.fetchone()

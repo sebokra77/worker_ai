@@ -9,12 +9,13 @@ from lib.task import get_next_task, get_remote_db_params
 def main():
     # Załaduj konfigurację i logger
     try:
+        print("Wczytywanie konfiguracji ",)
         cfg = load_env()
     except ValueError as error:
-        print(f"Błąd konfiguracji środowiska: {error}")
+        print(f"Błąd konfiguracji środowiska w pliku .env: {error}")
         sys.exit(1)
     logger = setup_logger('sync', 'logs/sync.log')
-
+    print("Łącznie z DB ...")
     logger.info("=== Rozpoczęcie synchronizacji ===")
 
     # Połączenie z bazą lokalną
@@ -22,21 +23,23 @@ def main():
     if not conn_local:
         logger.error("Nie udało się połączyć z bazą lokalną.")
         sys.exit(1)
-
+    
     cursor_local = conn_local.cursor(dictionary=True)
 
     # Pobierz zadanie do wykonania
+    print("Pobieranie taska ...")
     task = get_next_task(cursor_local)
+    print(task)
     if not task:
         logger.info("Brak zadań do synchronizacji.")
         return
 
-    logger.info(f"Pobrano zadanie ID={task['id_task']} z bazy {task['id_database']}")
+    logger.info(f"Pobrano zadanie ID={task['id_task']} z bazy {task['id_database_connection']}")
 
     # Pobierz parametry połączenia z bazy zewnętrznej
-    remote_params = get_remote_db_params(cursor_local, task['id_database'])
+    remote_params = get_remote_db_params(cursor_local, task['id_database_connection'])
     if not remote_params:
-        logger.error(f"Nie znaleziono konfiguracji bazy zewnętrznej ID={task['id_database']}")
+        logger.error(f"Nie znaleziono konfiguracji bazy zewnętrznej ID={task['id_database_connection']}")
         return
 
     # Nawiąż połączenie z bazą zewnętrzną
