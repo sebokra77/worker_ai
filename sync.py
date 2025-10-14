@@ -8,7 +8,11 @@ from lib.task import get_next_task, get_remote_db_params
 
 def main():
     # Załaduj konfigurację i logger
-    cfg = load_env()
+    try:
+        cfg = load_env()
+    except ValueError as error:
+        print(f"Błąd konfiguracji środowiska: {error}")
+        sys.exit(1)
     logger = setup_logger('sync', 'logs/sync.log')
 
     logger.info("=== Rozpoczęcie synchronizacji ===")

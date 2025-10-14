@@ -26,7 +26,7 @@ Lokalne parametry połączenia z bazą danych oraz ustawienia aplikacji przechow
 
 ```dotenv
 # Parametry lokalnej bazy danych MySQL
-DB_LOCAL_HOST=192.168.2.5
+DB_LOCAL_HOST=127.0.0.1
 DB_LOCAL_PORT=3306
 DB_LOCAL_USER=root
 DB_LOCAL_PASSWORD=seba00
@@ -38,6 +38,8 @@ LOG_LEVEL=INFO
 LOG_FORMAT=[%(asctime)s] %(levelname)s %(name)s: %(message)s
 LOG_SQL_QUERIES=false
 ```
+
+Ustawienie `DB_LOCAL_HOST=127.0.0.1` wymusza komunikację z MySQL przy użyciu TCP/IP zamiast nazwanych potoków/gniazd systemowych.
 
 Zmienne są wczytywane w obu skryptach poprzez bibliotekę `lib/load_config.py` (funkcja `load_env`). Dane dostępowe do zewnętrznych baz danych NIE są przechowywane w `.env` — znajdują się w tabeli `database_connection` w lokalnej bazie, co minimalizuje ryzyko przypadkowego ujawnienia haseł.
 
