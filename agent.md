@@ -89,7 +89,7 @@ Pass : ***
 
 ```
 CREATE TABLE `database_connection` (
-  `id_database` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `id_database_connection` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `id_user` INT NOT NULL,
   `alias` VARCHAR(64) NOT NULL COMMENT 'np. HR, CRM, Magazyn',
   `description` TEXT DEFAULT NULL,
@@ -113,7 +113,7 @@ CREATE TABLE `database_connection` (
 CREATE TABLE `task` (
   `id_task` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT 'Identyfikator zadania',
   `id_user` INT NOT NULL COMMENT 'Użytkownik, który zainicjował zadanie',
-  `id_database` INT UNSIGNED NOT NULL COMMENT 'Źródłowa baza danych (z tabeli database_connection)',
+  `id_database_connectione` INT UNSIGNED NOT NULL COMMENT 'Źródłowa baza danych (z tabeli database_connection)',
   `id_ai_model` INT UNSIGNED DEFAULT NULL COMMENT 'Model AI używany w zadaniu (jeśli dotyczy)',
   `table_name` VARCHAR(64) NOT NULL COMMENT 'Nazwa tabeli źródłowej',
   `column_name` VARCHAR(64) NOT NULL COMMENT 'Nazwa kolumny tekstowej do synchronizacji',
