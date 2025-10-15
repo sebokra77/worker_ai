@@ -559,7 +559,6 @@ def fetch_remote_batch(
             append_task_description(cursor_local, id_task, msg)
             print(msg)
             conn_local.commit()
-        should_increment_new = (task.get('records_fetched') or 0) == 0
         current_marker = marker_id
         while not no_new_records and current_marker < marker_max_id:
             fetch_query, fetch_params = build_fetch_query(
@@ -608,15 +607,13 @@ def fetch_remote_batch(
                 cursor_local.executemany(insert_sql, values_to_insert)
 
             records_fetched_increment = inserted_count
-            records_new_increment = inserted_count if should_increment_new else 0
-
             update_sql = (
                 "UPDATE task SET records_fetched = records_fetched + %s, "
-                "records_new = records_new + %s, marker_id = %s WHERE id_task = %s"
+                "marker_id = %s WHERE id_task = %s"
             )
             cursor_local.execute(
                 update_sql,
-                (records_fetched_increment, records_new_increment, last_remote_id, id_task),
+                (records_fetched_increment, last_remote_id, id_task),
             )
 
             log_message = (
@@ -627,9 +624,6 @@ def fetch_remote_batch(
             conn_local.commit()
 
             logger.info(log_message)
-
-            if should_increment_new and inserted_count > 0:
-                should_increment_new = False
             current_marker = last_remote_id
             if len(row_dicts) < batch_size:
                 break
