@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Główny skrypt odpowiedzialny za obsługę modeli AI."""
 
+import json
 import sys
 
 from lib.load_config import load_env
@@ -164,6 +165,11 @@ def main() -> None:
             append_task_error(cursor_local, task['id_task'], str(validation_error))
             conn_local.commit()
             return
+
+        print("Zweryfikowane elementy JSON (każdy w osobnej linii):")
+        for element in parsed_response:
+            # Wyświetlamy elementy w formacie JSON dla czytelności
+            print(json.dumps(element, ensure_ascii=False))
 
         try:
             expected_remote_ids = {
