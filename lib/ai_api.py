@@ -28,6 +28,13 @@ SUPPORTED_PROVIDERS = {
     'Anthropic',
 }
 
+_JSON_INSTRUCTIONS = {
+    'OpenAI': 'Zwróć wyłącznie poprawny JSON, bez komentarzy ani tekstu wokół. Wynik musi być czystym obiektem JSON.',
+    'DeepSeek': 'Return only valid JSON, without code blocks or extra text.',
+    'Google': 'Output only valid JSON. No markdown, no text outside the JSON.',
+    'Anthropic': 'Respond only with valid JSON. Do not include explanations, markdown, or any text before or after the JSON.',
+}
+
 SUPPORTED_MODELS = {
     'OpenAI': {
         'gpt-4.1',
@@ -122,14 +129,20 @@ def build_api_request(
     if builder is None:
         raise ValueError('Brak funkcji budującej zapytanie dla wskazanego dostawcy.')
 
+    max_tokens_value = options.get('max_tokens', model_config.get('max_tokens'))
+    if not max_tokens_value:
+        max_tokens_value = 256
+
     params = {
         'prompt': prompt,
         'temperature': options.get('temperature', model_config.get('temperature', 1.0)),
-        'max_tokens': options.get('max_tokens', model_config.get('max_tokens')),
+        'max_tokens': max_tokens_value,
         'system_prompt': options.get('system_prompt'),
     }
 
-    return builder(model_config, prompt, params)
+    prompt_with_instruction = _append_json_instruction(provider, prompt)
+
+    return builder(model_config, prompt_with_instruction, params)
 
 
 def execute_api_request(request: Dict[str, Any]) -> str:
@@ -159,6 +172,27 @@ def _fallback_model_check(provider: str, model_name: str) -> bool:
         if model_name.startswith(f'{pattern}-') or model_name.startswith(f'{pattern}.'):
             return True
     return False
+
+
+def _append_json_instruction(provider: str | None, prompt: str) -> str:
+    """Dodaje instrukcję zwracania JSON do treści promptu.
+
+    Args:
+        provider: Nazwa dostawcy modelu wykorzystywanego w zapytaniu.
+        prompt: Bazowa treść przekazywana do modelu.
+
+    Returns:
+        str: Treść promptu uzupełniona o instrukcję zwrócenia wyłącznie JSON.
+    """
+
+    instruction = _JSON_INSTRUCTIONS.get(provider or '')
+    if not instruction:
+        return prompt
+
+    normalized_prompt = prompt.rstrip()
+    if not normalized_prompt:
+        return instruction
+    return f"{normalized_prompt}\n\n{instruction}"
 
 
 def _is_not_found_error(error: Exception) -> bool:
@@ -280,9 +314,10 @@ def _prepare_openai_request(
         'model': model_config.get('model_name'),
         'messages': messages,
         'temperature': float(params['temperature']),
+        'max_completion_tokens': int(params['max_tokens']),
+        'response_format': {'type': 'json_object'},
+        'stream': False,
     }
-    if params['max_tokens']:
-        payload['max_tokens'] = int(params['max_tokens'])
 
     return {
         'provider': 'OpenAI',
@@ -309,9 +344,10 @@ def _prepare_deepseek_request(
         'model': model_config.get('model_name'),
         'messages': messages,
         'temperature': float(params['temperature']),
+        'max_completion_tokens': int(params['max_tokens']),
+        'response_format': {'type': 'json_object'},
+        'stream': False,
     }
-    if params['max_tokens']:
-        payload['max_tokens'] = int(params['max_tokens'])
 
     return {
         'provider': 'DeepSeek',
@@ -338,15 +374,16 @@ def _prepare_google_request(
 
     generation_config = {
         'temperature': float(params['temperature']),
+        'max_output_tokens': int(params['max_tokens']),
+        'response_mime_type': 'application/json',
     }
-    if params['max_tokens']:
-        generation_config['max_output_tokens'] = int(params['max_tokens'])
 
     kwargs: Dict[str, Any] = {
         'contents': [
             {'role': 'user', 'parts': [{'text': prompt}]},
         ],
         'generation_config': generation_config,
+        'stream': False,
     }
     if params.get('system_prompt'):
         kwargs['system_instruction'] = {'parts': [{'text': params['system_prompt']}]} 
@@ -381,10 +418,9 @@ def _prepare_anthropic_request(
             }
         ],
         'temperature': float(params['temperature']),
-        'max_tokens': int(params['max_tokens']) if params['max_tokens'] else 0,
+        'max_output_tokens': int(params['max_tokens']),
+        'stream': False,
     }
-    if not kwargs['max_tokens']:
-        kwargs.pop('max_tokens')
     if params.get('system_prompt'):
         kwargs['system'] = params['system_prompt']
 
