@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Tuple
 
 from openai import OpenAI
 try:  # pragma: no cover - obsługa różnych wersji biblioteki
@@ -151,8 +151,8 @@ def build_api_request(
     return builder(model_config, prompt_with_instruction, params)
 
 
-def execute_api_request(request: Dict[str, Any]) -> str:
-    """Wysyła zapytanie do dostawcy AI i zwraca odpowiedź tekstową."""
+def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int]:
+    """Wysyła zapytanie do dostawcy AI i zwraca odpowiedź wraz z metrykami tokenów."""
 
     if not request:
         raise ValueError('Brak danych żądania API.')
@@ -471,78 +471,163 @@ def _prepare_anthropic_request(
     }
 
 
-def _extract_response_text(provider: str | None, response: Any) -> str:
-    """Wydobywa treść odpowiedzi z obiektu zwróconego przez różne biblioteki."""
+def _extract_response_text(provider: str | None, response: Any) -> Tuple[str, int, int]:
+    """Wydobywa treść odpowiedzi wraz z informacjami o tokenach."""
+
+    text_value: str | None = None
 
     if provider in {'OpenAI', 'DeepSeek'}:
-        choices = getattr(response, 'choices', None) or response.get('choices') if isinstance(response, dict) else None
+        choices = getattr(response, 'choices', None)
+        if choices is None and isinstance(response, dict):
+            choices = response.get('choices')
         if choices:
             first_choice = choices[0]
             if isinstance(first_choice, dict):
                 message = first_choice.get('message') or {}
                 content = message.get('content')
                 if isinstance(content, list):
-                    return ''.join(
+                    text_value = ''.join(
                         part.get('text', '') if isinstance(part, dict) else str(part)
                         for part in content
                     )
-                if content:
-                    return content
-                if 'text' in first_choice:
-                    return str(first_choice['text'])
+                elif content:
+                    text_value = str(content)
+                elif 'text' in first_choice:
+                    text_value = str(first_choice['text'])
             else:
                 message = getattr(first_choice, 'message', None)
                 if message is not None:
                     content = getattr(message, 'content', None)
                     if isinstance(content, list):
-                        return ''.join(
+                        text_value = ''.join(
                             getattr(part, 'text', str(part))
                             for part in content
                         )
-                    if content:
-                        return str(content)
-                text_value = getattr(first_choice, 'text', None)
-                if text_value:
-                    return str(text_value)
-        content = getattr(response, 'content', None)
-        if content:
-            return str(content)
+                    elif content:
+                        text_value = str(content)
+                if text_value is None:
+                    text_candidate = getattr(first_choice, 'text', None)
+                    if text_candidate:
+                        text_value = str(text_candidate)
+        if text_value is None:
+            content = getattr(response, 'content', None)
+            if content:
+                text_value = str(content)
 
-    if provider == 'Google':
-        text_value = getattr(response, 'text', None)
-        if text_value:
-            return str(text_value)
-        candidates = getattr(response, 'candidates', None) or response.get('candidates') if isinstance(response, dict) else None
-        if candidates:
-            candidate = candidates[0]
-            if isinstance(candidate, dict):
-                content = candidate.get('content', {})
-                parts = content.get('parts') if isinstance(content, dict) else candidate.get('parts')
-                if isinstance(parts, list):
-                    return ''.join(
-                        part.get('text', '') if isinstance(part, dict) else str(part)
-                        for part in parts
-                    )
-            else:
-                parts = getattr(candidate, 'parts', None)
-                if parts:
-                    return ''.join(getattr(part, 'text', str(part)) for part in parts)
+    if provider == 'Google' and text_value is None:
+        primary_text = getattr(response, 'text', None)
+        if primary_text:
+            text_value = str(primary_text)
+        else:
+            candidates = getattr(response, 'candidates', None)
+            if candidates is None and isinstance(response, dict):
+                candidates = response.get('candidates')
+            if candidates:
+                candidate = candidates[0]
+                if isinstance(candidate, dict):
+                    content = candidate.get('content', {})
+                    parts = content.get('parts') if isinstance(content, dict) else candidate.get('parts')
+                    if isinstance(parts, list):
+                        text_value = ''.join(
+                            part.get('text', '') if isinstance(part, dict) else str(part)
+                            for part in parts
+                        )
+                else:
+                    parts = getattr(candidate, 'parts', None)
+                    if parts:
+                        text_value = ''.join(
+                            getattr(part, 'text', str(part))
+                            for part in parts
+                        )
 
-    if provider == 'Anthropic':
+    if provider == 'Anthropic' and text_value is None:
         content = getattr(response, 'content', None)
         if isinstance(content, list):
-            return ''.join(
+            text_value = ''.join(
                 part.get('text', '') if isinstance(part, dict) else getattr(part, 'text', str(part))
                 for part in content
             )
-        if content:
-            return str(content)
-        completion = getattr(response, 'completion', None)
-        if completion:
-            return str(completion)
+        elif content:
+            text_value = str(content)
+        else:
+            completion = getattr(response, 'completion', None)
+            if completion:
+                text_value = str(completion)
 
-    # Fallback na reprezentację tekstową obiektu odpowiedzi
-    return str(response)
+    if text_value is None:
+        text_value = str(response)
+
+    tokens_input, tokens_output = _extract_usage_tokens(provider, response)
+    return text_value, tokens_input, tokens_output
+
+
+def _extract_usage_tokens(provider: str | None, response: Any) -> Tuple[int, int]:
+    """Wyciąga informacje o liczbie tokenów wejściowych i wyjściowych."""
+
+    if provider in {'OpenAI', 'DeepSeek'}:
+        usage = getattr(response, 'usage', None)
+        if usage is None and isinstance(response, dict):
+            usage = response.get('usage')
+        return (
+            _extract_usage_value(usage, 'prompt_tokens', 'promptTokens', 'input_tokens', 'inputTokens'),
+            _extract_usage_value(usage, 'completion_tokens', 'completionTokens', 'output_tokens', 'outputTokens'),
+        )
+
+    if provider == 'Google':
+        metadata = getattr(response, 'usage_metadata', None)
+        if metadata is None and isinstance(response, dict):
+            metadata = response.get('usage_metadata') or response.get('usageMetadata')
+        return (
+            _extract_usage_value(
+                metadata,
+                'prompt_token_count',
+                'promptTokenCount',
+                'prompt_tokens',
+                'promptTokens',
+            ),
+            _extract_usage_value(
+                metadata,
+                'candidates_token_count',
+                'candidatesTokenCount',
+                'output_token_count',
+                'outputTokenCount',
+            ),
+        )
+
+    if provider == 'Anthropic':
+        usage = getattr(response, 'usage', None)
+        if usage is None and isinstance(response, dict):
+            usage = response.get('usage')
+        return (
+            _extract_usage_value(usage, 'input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens'),
+            _extract_usage_value(usage, 'output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens'),
+        )
+
+    return 0, 0
+
+
+def _extract_usage_value(container: Any, *candidates: str) -> int:
+    """Wyszukuje pierwszą dostępną wartość tokenów i konwertuje ją na liczbę całkowitą."""
+
+    if container is None:
+        return 0
+
+    for key in candidates:
+        value = None
+        if isinstance(container, dict):
+            value = container.get(key)
+        else:
+            value = getattr(container, key, None)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                continue
+    return 0
 
 
 _PROVIDER_MODEL_CHECKERS: Dict[str, Callable[[Dict[str, Any]], bool]] = {
