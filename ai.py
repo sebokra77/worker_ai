@@ -138,7 +138,7 @@ def main() -> None:
 
         print("Rozpoczynam połączenie do AI...")
         try:
-            response_text = execute_api_request(request_data)
+            response_text, tokens_input_total, tokens_output_total = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
             log_error_and_print(
                 logger,
@@ -184,6 +184,8 @@ def main() -> None:
                 task['id_task'],
                 parsed_response,
                 expected_remote_ids,
+                tokens_input_total,
+                tokens_output_total,
             )
             conn_local.commit()
         except ValueError as update_error:

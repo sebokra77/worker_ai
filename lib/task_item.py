@@ -297,6 +297,8 @@ def update_task_items_from_json(
     id_task: int,
     response_items: Iterable[Dict[str, Any]],
     expected_remote_ids: Optional[Iterable[Any]] = None,
+    tokens_input_total: Optional[int] = None,
+    tokens_output_total: Optional[int] = None,
 ) -> int:
     """Aktualizuje rekordy ``task_item`` na podstawie danych z modelu AI.
 
@@ -305,6 +307,8 @@ def update_task_items_from_json(
         id_task (int): Identyfikator zadania powiązanego z rekordami.
         response_items (Iterable[dict[str, Any]]): Dane przekazane z modelu AI.
         expected_remote_ids (Optional[Iterable[Any]]): Zbiór identyfikatorów oczekiwanych w odpowiedzi.
+        tokens_input_total (Optional[int]): Łączna liczba tokenów wejściowych zwrócona przez model AI.
+        tokens_output_total (Optional[int]): Łączna liczba tokenów wyjściowych zwrócona przez model AI.
 
     Returns:
         int: Liczba zaktualizowanych rekordów.
@@ -313,31 +317,69 @@ def update_task_items_from_json(
         ValueError: Gdy rekord odpowiedzi nie zawiera wymaganych pól lub narusza walidację.
     """
 
-    updated = 0
-    sql = (
-        "UPDATE task_item SET text_corrected = %s, status = 'processed', "
-        "processed_at = NOW() WHERE id_task = %s AND remote_id = %s"
-    )
+    # Konwertujemy elementy odpowiedzi do listy, aby móc je przeliczać wielokrotnie
+    items_list = list(response_items)
+    if not items_list:
+        return 0
 
+    updated = 0
     expected_set = set(expected_remote_ids or [])
     processed_ids: Set[Any] = set()
 
+    # Podział liczby tokenów na poszczególne rekordy odpowiedzi
+    item_count = len(items_list)
+    tokens_input_value = int(tokens_input_total or 0)
+    tokens_output_value = int(tokens_output_total or 0)
+    tokens_input_per_item = tokens_input_value // item_count if item_count else 0
+    tokens_output_per_item = tokens_output_value // item_count if item_count else 0
+
     # Iterujemy po danych z modelu, walidując minimalny zestaw pól
-    for item in response_items:
-        remote_id = item.get('remote_id', item.get('id'))
+    for item in items_list:
+        remote_id = item.get('remote_id')
+        fallback_id = item.get('id_task_item', item.get('id'))
         text_corrected = item.get('text_corrected')
-        if remote_id is None:
+        if remote_id is None and fallback_id is None:
             raise ValueError('Element odpowiedzi nie zawiera pola remote_id/id.')
         if text_corrected is None:
             raise ValueError('Element odpowiedzi nie zawiera pola text_corrected.')
 
-        if expected_set and remote_id not in expected_set:
-            raise ValueError(f"Remote_id {remote_id} nie znajduje się na liście oczekiwanych rekordów.")
-        if remote_id in processed_ids:
-            raise ValueError(f"Remote_id {remote_id} zostało zwrócone wielokrotnie w odpowiedzi.")
-        processed_ids.add(remote_id)
+        identifier_column = 'remote_id'
+        identifier_value: Any = remote_id
+        if identifier_value in (None, ''):
+            identifier_column = 'id_task_item'
+            identifier_value = fallback_id
 
-        cursor.execute(sql, (text_corrected, id_task, remote_id))
+        if expected_set and identifier_value not in expected_set:
+            raise ValueError(
+                f"Remote_id {identifier_value} nie znajduje się na liście oczekiwanych rekordów."
+            )
+        if identifier_value in processed_ids:
+            raise ValueError(
+                f"Remote_id {identifier_value} zostało zwrócone wielokrotnie w odpowiedzi."
+            )
+        processed_ids.add(identifier_value)
+
+        if text_corrected == '':
+            # Gdy model AI nie wskazał zmian, kopiujemy tekst oryginalny
+            cursor.execute(
+                (
+                    "UPDATE task_item SET text_corrected = text_original, status = 'unchanged', "
+                    "processed_at = NOW(), tokens_input = %s, tokens_output = %s "
+                    "WHERE id_task = %s AND "
+                    f"{identifier_column} = %s"
+                ),
+                (tokens_input_per_item, tokens_output_per_item, id_task, identifier_value),
+            )
+        else:
+            cursor.execute(
+                (
+                    "UPDATE task_item SET text_corrected = %s, status = 'changed', "
+                    "processed_at = NOW(), tokens_input = %s, tokens_output = %s "
+                    "WHERE id_task = %s AND "
+                    f"{identifier_column} = %s"
+                ),
+                (text_corrected, tokens_input_per_item, tokens_output_per_item, id_task, identifier_value),
+            )
         if cursor.rowcount:
             updated += 1
 
