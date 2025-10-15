@@ -28,8 +28,8 @@ Lokalne parametry połączenia z bazą danych oraz ustawienia aplikacji przechow
 # Parametry lokalnej bazy danych MySQL
 DB_LOCAL_HOST=127.0.0.1
 DB_LOCAL_PORT=3306
-DB_LOCAL_USER=root
-DB_LOCAL_PASSWORD=seba00
+DB_LOCAL_USER=
+DB_LOCAL_PASSWORD=
 DB_LOCAL_NAME=ailexia
 
 # Ustawienia aplikacji
