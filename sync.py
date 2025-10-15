@@ -82,7 +82,7 @@ def main():
             task.get('id_task'),
             stage,
         )
-        print("Pominięto pobieranie rekordów dla tego etapu zadania.")
+        print("Brak zadań do prztworzenia.")
 
     cursor_local.close()
     conn_local.close()
