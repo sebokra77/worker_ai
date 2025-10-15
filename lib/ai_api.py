@@ -151,7 +151,7 @@ def build_api_request(
     return builder(model_config, prompt_with_instruction, params)
 
 
-def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int]:
+def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int, str]:
     """Wysyła zapytanie do dostawcy AI i zwraca odpowiedź wraz z metrykami tokenów."""
 
     if not request:
@@ -165,7 +165,9 @@ def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int]:
 
     # Wysłanie zapytania bez zapamiętywania historii – każde żądanie zawiera tylko bieżący prompt
     response = callable_object(**payload)
-    return _extract_response_text(provider, response)
+    text_value, tokens_input, tokens_output = _extract_response_text(provider, response)
+    raw_response = repr(response)
+    return text_value, tokens_input, tokens_output, raw_response
 
 
 def _fallback_model_check(provider: str, model_name: str) -> bool:
