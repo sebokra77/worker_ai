@@ -108,12 +108,19 @@ def main() -> None:
             return
 
         prompt_text = build_correction_prompt(pending_items)
+        request_options = {}
+        temperature_value = ai_model.get('temperature')
+        if temperature_value not in (None, ''):
+            request_options['temperature'] = temperature_value
+        max_tokens_value = ai_model.get('max_tokens')
+        if max_tokens_value not in (None, ''):
+            request_options['max_tokens'] = max_tokens_value
+
         try:
             request_data = build_api_request(
                 ai_model,
                 prompt_text,
-                temperature=ai_model.get('temperature'),
-                max_tokens=ai_model.get('max_tokens'),
+                **request_options,
             )
         except ValueError as api_error:
             log_error_and_print(
