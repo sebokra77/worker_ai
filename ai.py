@@ -15,9 +15,9 @@ from lib.ai_api import (
     is_model_supported,
     is_provider_supported,
 )
+from lib.ai_prompt import build_correction_prompt
 from lib.task_item import (
     append_task_error,
-    build_correction_prompt,
     fetch_pending_task_items,
     parse_json_response,
     update_task_items_from_json,
@@ -138,7 +138,7 @@ def main() -> None:
 
         print("Rozpoczynam połączenie do AI...")
         try:
-            response_text = execute_api_request(request_data)
+            response_text, tokens_input_total, tokens_output_total = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
             log_error_and_print(
                 logger,
@@ -184,6 +184,8 @@ def main() -> None:
                 task['id_task'],
                 parsed_response,
                 expected_remote_ids,
+                tokens_input_total,
+                tokens_output_total,
             )
             conn_local.commit()
         except ValueError as update_error:
