@@ -319,9 +319,34 @@ def _prepare_openai_request(
     payload = {
         'model': model_config.get('model_name'),
         'messages': messages,
-        'response_format': {'type': 'json_object'},
+        'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
+                'name': 'Corrections',
+                'schema': {
+                    'type': 'object',
+                    'properties': {
+                        'items': {
+                            'type': 'array',
+                            'items': {
+                                'type': 'object',
+                                'properties': {
+                                    'remote_id': {'type': 'integer'},
+                                    'text_corrected': {'type': 'string'}
+                                },
+                                'required': ['remote_id', 'text_corrected'],
+                                'additionalProperties': False
+                            }
+                        }
+                    },
+                    'required': ['items'],
+                    'additionalProperties': False
+                }
+            }
+        },
         'stream': False,
     }
+
     if 'temperature' in params:
         payload['temperature'] = float(params['temperature'])
     if 'max_tokens' in params:

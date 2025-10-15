@@ -153,8 +153,8 @@ def build_correction_prompt(records: Iterable[Dict[str, Any]]) -> str:
 
     lines: List[str] = [
         "<PROMPT>",
-        "Popraw poniższe zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym.",
-        "Nie zmieniaj znaczenia zdań. Zwróć wynik w formacie JSON w postaci listy obiektów:",
+        "Popraw poniższe zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym. ",
+        "Nie zmieniaj znaczenia zdań. Zwracaj wszystkie zadania. Gdy nie dokonasz zmiany zwróć text_corrected jako pusty string. Wynik w formacie JSON w postaci listy obiektów:",
         "[",
         "  {\"remote_id\":1,\"text_corrected\":\"...\"},",
         "  {\"remote_id\":2,\"text_corrected\":\"...\"}",
