@@ -107,7 +107,10 @@ def main() -> None:
             print("Brak rekordów pending dla zadania.")
             return
 
-        prompt_text = build_correction_prompt(pending_items)
+        prompt_text = build_correction_prompt(
+            pending_items,
+            task.get('ai_user_rules'),
+        )
         print("Wygenerowany prompt do modelu AI:")
         print(prompt_text)
         request_options = {}
@@ -163,10 +166,18 @@ def main() -> None:
             return
 
         try:
+            expected_remote_ids = {
+                item.get('remote_id')
+                if item.get('remote_id') is not None
+                else item.get('id_task_item')
+                for item in pending_items
+                if item.get('remote_id') is not None or item.get('id_task_item') is not None
+            }
             updated = update_task_items_from_json(
                 cursor_local,
                 task['id_task'],
                 parsed_response,
+                expected_remote_ids,
             )
             conn_local.commit()
         except ValueError as update_error:

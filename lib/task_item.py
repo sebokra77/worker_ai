@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 
 def sanitize_identifier(name: str) -> str:
@@ -141,11 +141,15 @@ def fetch_pending_task_items(
     return items[:max_items]
 
 
-def build_correction_prompt(records: Iterable[Dict[str, Any]]) -> str:
+def build_correction_prompt(
+    records: Iterable[Dict[str, Any]],
+    user_rules: Optional[str] = None,
+) -> str:
     """Buduje treść promptu dla modelu AI poprawiającego teksty.
 
     Args:
         records (Iterable[dict[str, Any]]): Lista rekordów z danymi tekstowymi.
+        user_rules (Optional[str]): Dodatkowe reguły użytkownika przekazywane do promptu.
 
     Returns:
         str: Gotowa treść promptu przekazywana do modelu AI.
@@ -160,8 +164,23 @@ def build_correction_prompt(records: Iterable[Dict[str, Any]]) -> str:
         "  {\"remote_id\":2,\"text_corrected\":\"...\"}",
         "]",
         "",
-        "Zdania:",
     ]
+
+    user_rules_value = (user_rules or '').strip()
+    if user_rules_value:
+        lines.extend(
+            [
+                "Dodatkowe reguły użytkownika:",
+                user_rules_value,
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "Zdania:",
+        ]
+    )
 
     # Doklejanie poszczególnych tekstów do sekcji "Zdania"
     for record in records:
@@ -193,6 +212,12 @@ def parse_json_response(response_text: str) -> List[Dict[str, Any]]:
     except json.JSONDecodeError as error:  # noqa: B904
         raise ValueError('Odpowiedź modelu AI nie jest poprawnym JSON-em.') from error
 
+    if isinstance(parsed, dict):
+        items = parsed.get('items')
+        if items is None:
+            raise ValueError('Odpowiedź modelu AI nie zawiera sekcji items.')
+        parsed = items
+
     if not isinstance(parsed, list):
         raise ValueError('Odpowiedź modelu AI powinna być listą obiektów JSON.')
 
@@ -209,6 +234,7 @@ def update_task_items_from_json(
     cursor,
     id_task: int,
     response_items: Iterable[Dict[str, Any]],
+    expected_remote_ids: Optional[Iterable[Any]] = None,
 ) -> int:
     """Aktualizuje rekordy ``task_item`` na podstawie danych z modelu AI.
 
@@ -216,12 +242,13 @@ def update_task_items_from_json(
         cursor: Kursor połączenia z bazą lokalną.
         id_task (int): Identyfikator zadania powiązanego z rekordami.
         response_items (Iterable[dict[str, Any]]): Dane przekazane z modelu AI.
+        expected_remote_ids (Optional[Iterable[Any]]): Zbiór identyfikatorów oczekiwanych w odpowiedzi.
 
     Returns:
         int: Liczba zaktualizowanych rekordów.
 
     Raises:
-        ValueError: Gdy rekord odpowiedzi nie zawiera wymaganych pól.
+        ValueError: Gdy rekord odpowiedzi nie zawiera wymaganych pól lub narusza walidację.
     """
 
     updated = 0
@@ -229,6 +256,9 @@ def update_task_items_from_json(
         "UPDATE task_item SET text_corrected = %s, status = 'processed', "
         "processed_at = NOW() WHERE id_task = %s AND remote_id = %s"
     )
+
+    expected_set = set(expected_remote_ids or [])
+    processed_ids: Set[Any] = set()
 
     # Iterujemy po danych z modelu, walidując minimalny zestaw pól
     for item in response_items:
@@ -238,6 +268,12 @@ def update_task_items_from_json(
             raise ValueError('Element odpowiedzi nie zawiera pola remote_id/id.')
         if text_corrected is None:
             raise ValueError('Element odpowiedzi nie zawiera pola text_corrected.')
+
+        if expected_set and remote_id not in expected_set:
+            raise ValueError(f"Remote_id {remote_id} nie znajduje się na liście oczekiwanych rekordów.")
+        if remote_id in processed_ids:
+            raise ValueError(f"Remote_id {remote_id} zostało zwrócone wielokrotnie w odpowiedzi.")
+        processed_ids.add(remote_id)
 
         cursor.execute(sql, (text_corrected, id_task, remote_id))
         if cursor.rowcount:
