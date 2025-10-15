@@ -1,6 +1,7 @@
 import hashlib
+import json
 import re
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 
 def sanitize_identifier(name: str) -> str:
@@ -97,6 +98,152 @@ def append_task_error(cursor, id_task: int, message: str) -> None:
         "ELSE CONCAT(error_log, '\n', %s) END WHERE id_task = %s"
     )
     cursor.execute(sql, (message, message, id_task))
+
+
+def fetch_pending_task_items(
+    cursor,
+    id_task: int,
+    chunk_size: int = 10,
+    max_items: int = 20,
+) -> List[Dict[str, Any]]:
+    """Pobiera oczekujące rekordy ``task_item`` w niewielkich porcjach.
+
+    Args:
+        cursor: Kursor połączenia z bazą lokalną.
+        id_task (int): Identyfikator zadania, dla którego wyszukujemy rekordy.
+        chunk_size (int): Rozmiar pojedynczej partii zapytań do bazy.
+        max_items (int): Maksymalna liczba rekordów zwracana przez funkcję.
+
+    Returns:
+        list[dict[str, Any]]: Lista rekordów zawierających podstawowe dane tekstowe.
+    """
+
+    items: List[Dict[str, Any]] = []
+    last_id = 0
+
+    # Pętla pobiera dane partiami, aby ograniczyć liczbę jednoczesnych rekordów w pamięci
+    while len(items) < max_items:
+        sql = (
+            "SELECT id_task_item, remote_id, text_original "
+            "FROM task_item "
+            "WHERE id_task = %s AND status = 'pending' AND id_task_item > %s "
+            "ORDER BY id_task_item ASC LIMIT %s"
+        )
+        cursor.execute(sql, (id_task, last_id, chunk_size))
+        batch = cursor.fetchall()
+        if not batch:
+            break
+        items.extend(batch)
+        last_id = batch[-1]['id_task_item']
+        if len(batch) < chunk_size:
+            break
+
+    return items[:max_items]
+
+
+def build_correction_prompt(records: Iterable[Dict[str, Any]]) -> str:
+    """Buduje treść promptu dla modelu AI poprawiającego teksty.
+
+    Args:
+        records (Iterable[dict[str, Any]]): Lista rekordów z danymi tekstowymi.
+
+    Returns:
+        str: Gotowa treść promptu przekazywana do modelu AI.
+    """
+
+    lines: List[str] = [
+        "<PROMPT>",
+        "Popraw poniższe zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym.",
+        "Nie zmieniaj znaczenia zdań. Zwróć wynik w formacie JSON w postaci listy obiektów:",
+        "[",
+        "  {\"remote_id\":1,\"text_corrected\":\"...\"},",
+        "  {\"remote_id\":2,\"text_corrected\":\"...\"}",
+        "]",
+        "",
+        "Zdania:",
+    ]
+
+    # Doklejanie poszczególnych tekstów do sekcji "Zdania"
+    for record in records:
+        remote_id = record.get('remote_id')
+        if remote_id is None:
+            remote_id = record.get('id_task_item')
+        text_value = (record.get('text_original') or '').replace('\r', ' ').replace('\n', ' ').strip()
+        lines.append(f"{remote_id}. {text_value}")
+
+    lines.append("</PROMPT>")
+    return "\n".join(lines)
+
+
+def parse_json_response(response_text: str) -> List[Dict[str, Any]]:
+    """Waliduje i konwertuje odpowiedź modelu AI na strukturę Python.
+
+    Args:
+        response_text (str): Odpowiedź tekstowa zwrócona przez model AI.
+
+    Returns:
+        list[dict[str, Any]]: Zweryfikowana lista rekordów do dalszego przetwarzania.
+
+    Raises:
+        ValueError: Gdy odpowiedź nie jest poprawnym JSON-em lub nie spełnia wymagań.
+    """
+
+    try:
+        parsed = json.loads(response_text)
+    except json.JSONDecodeError as error:  # noqa: B904
+        raise ValueError('Odpowiedź modelu AI nie jest poprawnym JSON-em.') from error
+
+    if not isinstance(parsed, list):
+        raise ValueError('Odpowiedź modelu AI powinna być listą obiektów JSON.')
+
+    normalised: List[Dict[str, Any]] = []
+    for idx, item in enumerate(parsed, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f'Element #{idx} w odpowiedzi nie jest obiektem JSON.')
+        normalised.append(item)
+
+    return normalised
+
+
+def update_task_items_from_json(
+    cursor,
+    id_task: int,
+    response_items: Iterable[Dict[str, Any]],
+) -> int:
+    """Aktualizuje rekordy ``task_item`` na podstawie danych z modelu AI.
+
+    Args:
+        cursor: Kursor połączenia z bazą lokalną.
+        id_task (int): Identyfikator zadania powiązanego z rekordami.
+        response_items (Iterable[dict[str, Any]]): Dane przekazane z modelu AI.
+
+    Returns:
+        int: Liczba zaktualizowanych rekordów.
+
+    Raises:
+        ValueError: Gdy rekord odpowiedzi nie zawiera wymaganych pól.
+    """
+
+    updated = 0
+    sql = (
+        "UPDATE task_item SET text_corrected = %s, status = 'processed', "
+        "processed_at = NOW() WHERE id_task = %s AND remote_id = %s"
+    )
+
+    # Iterujemy po danych z modelu, walidując minimalny zestaw pól
+    for item in response_items:
+        remote_id = item.get('remote_id', item.get('id'))
+        text_corrected = item.get('text_corrected')
+        if remote_id is None:
+            raise ValueError('Element odpowiedzi nie zawiera pola remote_id/id.')
+        if text_corrected is None:
+            raise ValueError('Element odpowiedzi nie zawiera pola text_corrected.')
+
+        cursor.execute(sql, (text_corrected, id_task, remote_id))
+        if cursor.rowcount:
+            updated += 1
+
+    return updated
 
 
 def append_task_description(cursor, id_task: int, message: str) -> None:

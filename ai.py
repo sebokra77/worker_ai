@@ -7,7 +7,20 @@ from lib.load_config import load_env
 from lib.db_utils import setup_logger
 from lib.db_local import connect_local
 from lib.task import get_next_task
-from lib.ai_api import fetch_ai_model_config, is_provider_supported, is_model_supported, build_api_request
+from lib.ai_api import (
+    build_api_request,
+    execute_api_request,
+    fetch_ai_model_config,
+    is_model_supported,
+    is_provider_supported,
+)
+from lib.task_item import (
+    append_task_error,
+    build_correction_prompt,
+    fetch_pending_task_items,
+    parse_json_response,
+    update_task_items_from_json,
+)
 
 
 def main() -> None:
@@ -85,7 +98,16 @@ def main() -> None:
             return
 
         # Przygotuj dane zapytania do API (przykładowa treść promptu)
-        prompt_text = ''
+        pending_items = fetch_pending_task_items(cursor_local, task['id_task'])
+        if not pending_items:
+            logger.info(
+                "Brak rekordów do przetworzenia dla zadania ID=%s.",
+                task['id_task'],
+            )
+            print("Brak rekordów pending dla zadania.")
+            return
+
+        prompt_text = build_correction_prompt(pending_items)
         try:
             request_data = build_api_request(
                 ai_model,
@@ -98,15 +120,60 @@ def main() -> None:
             print("Błąd przygotowania zapytania API.")
             return
 
-        # W tym miejscu request_data można przekazać do funkcji wywołującej API.
-        _ = request_data
+        try:
+            response_text = execute_api_request(request_data)
+        except Exception as api_error:  # noqa: BLE001
+            logger.error(
+                "Błąd wywołania modelu AI %s (%s): %s",
+                model_name,
+                provider,
+                api_error,
+            )
+            append_task_error(cursor_local, task['id_task'], str(api_error))
+            conn_local.commit()
+            print("Błąd podczas wywołania modelu AI.")
+            return
+
+        try:
+            parsed_response = parse_json_response(response_text)
+        except ValueError as validation_error:
+            logger.error(
+                "Model AI zwrócił niepoprawny JSON dla zadania ID=%s: %s",
+                task['id_task'],
+                validation_error,
+            )
+            append_task_error(cursor_local, task['id_task'], str(validation_error))
+            conn_local.commit()
+            print("Niepoprawny format odpowiedzi modelu AI.")
+            return
+
+        try:
+            updated = update_task_items_from_json(
+                cursor_local,
+                task['id_task'],
+                parsed_response,
+            )
+            conn_local.commit()
+        except ValueError as update_error:
+            logger.error(
+                "Nie udało się zaktualizować rekordów zadania ID=%s: %s",
+                task['id_task'],
+                update_error,
+            )
+            conn_local.rollback()
+            append_task_error(cursor_local, task['id_task'], str(update_error))
+            conn_local.commit()
+            print("Błąd podczas aktualizacji rekordów w bazie.")
+            return
 
         logger.info(
-            "Przygotowano zapytanie API dla modelu %s (%s).",
+            "Przetworzono %s rekordów zadania ID=%s modelem %s (%s).",
+            updated,
+            task['id_task'],
             model_name,
             provider,
         )
-        print("Model AI gotowy do przetwarzania.")
+        print("Model AI zakończył przetwarzanie rekordów.")
     finally:
         cursor_local.close()
         conn_local.close()
