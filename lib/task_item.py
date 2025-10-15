@@ -157,8 +157,8 @@ def build_correction_prompt(
 
     lines: List[str] = [
         "<PROMPT>",
-        "Popraw poniższe zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym. ",
-        "Nie zmieniaj znaczenia zdań. Zwracaj wszystkie zadania. Gdy nie dokonasz zmiany zwróć text_corrected jako pusty string. Wynik w formacie JSON w postaci listy obiektów:",
+        "PPopraw poniższe zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym.",
+        "Nie zmieniaj znaczenia zdań. Zwróć wynik w formacie JSON w postaci listy obiektów:",
         "[",
         "  {\"remote_id\":1,\"text_corrected\":\"...\"},",
         "  {\"remote_id\":2,\"text_corrected\":\"...\"}",
@@ -171,6 +171,10 @@ def build_correction_prompt(
         lines.extend(
             [
                 "Dodatkowe reguły użytkownika:",
+                "- Jeżeli zdanie nie wymaga poprawy, zwróć 'text_corrected' jako pusty string.",
+                "- Każdy wpis ma mieć klucz \"remote_id\" zgodny z numerem zdania.",
+                "- Nie dodawaj żadnych komentarzy ani tekstu poza JSON.",
+                "- Każde zdanie traktuj jako osobną jednostkę.",
                 user_rules_value,
                 "",
             ]
