@@ -142,62 +142,6 @@ def fetch_pending_task_items(
     return items[:max_items]
 
 
-def build_correction_prompt(
-    records: Iterable[Dict[str, Any]],
-    user_rules: Optional[str] = None,
-) -> str:
-    """Buduje treść promptu dla modelu AI poprawiającego teksty.
-
-    Args:
-        records (Iterable[dict[str, Any]]): Lista rekordów z danymi tekstowymi.
-        user_rules (Optional[str]): Dodatkowe reguły użytkownika przekazywane do promptu.
-
-    Returns:
-        str: Gotowa treść promptu przekazywana do modelu AI.
-    """
-
-    lines: List[str] = [
-        "<PROMPT>",
-        "PPopraw poniższe zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym.",
-        "Nie zmieniaj znaczenia zdań. Zwróć wynik w formacie JSON w postaci listy obiektów:",
-        "[",
-        "  {\"remote_id\":1,\"text_corrected\":\"...\"},",
-        "  {\"remote_id\":2,\"text_corrected\":\"...\"}",
-        "]",
-        "",
-    ]
-
-    user_rules_value = (user_rules or '').strip()
-    if user_rules_value:
-        lines.extend(
-            [
-                "Dodatkowe reguły użytkownika:",
-                "- Jeżeli zdanie nie wymaga poprawy, zwróć 'text_corrected' jako pusty string.",
-                "- Każdy wpis ma mieć klucz \"remote_id\" zgodny z numerem zdania.",
-                "- Nie dodawaj żadnych komentarzy ani tekstu poza JSON.",
-                "- Każde zdanie traktuj jako osobną jednostkę.",
-                user_rules_value,
-                "",
-            ]
-        )
-
-    lines.extend(
-        [
-            "Zdania:",
-        ]
-    )
-
-    # Doklejanie poszczególnych tekstów do sekcji "Zdania"
-    for record in records:
-        remote_id = record.get('remote_id')
-        if remote_id is None:
-            remote_id = record.get('id_task_item')
-        text_value = (record.get('text_original') or '').replace('\r', ' ').replace('\n', ' ').strip()
-        lines.append(f"{remote_id}. {text_value}")
-
-    lines.append("</PROMPT>")
-    return "\n".join(lines)
-
 
 def _extract_json_text(response_text: str) -> str:
     """Wydobywa fragment JSON z surowej odpowiedzi API.

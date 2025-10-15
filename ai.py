@@ -15,9 +15,9 @@ from lib.ai_api import (
     is_model_supported,
     is_provider_supported,
 )
+from lib.ai_prompt import build_correction_prompt
 from lib.task_item import (
     append_task_error,
-    build_correction_prompt,
     fetch_pending_task_items,
     parse_json_response,
     update_task_items_from_json,
