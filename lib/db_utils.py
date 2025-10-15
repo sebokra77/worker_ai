@@ -3,6 +3,21 @@ import os
 import hashlib
 from datetime import datetime
 
+
+def log_error_and_print(logger, message: str, *args) -> None:
+    """Loguje błąd i wypisuje go w konsoli.
+
+    Args:
+        logger: Obiekt loggera używany do zapisywania komunikatów błędów.
+        message (str): Treść komunikatu z symbolami formatującymi zgodnymi z ``logging``.
+        *args: Argumenty podstawiane do komunikatu błędu.
+    """
+
+    # Wypisanie pełnej wiadomości w konsoli dla lepszej diagnostyki
+    formatted_message = message % args if args else message
+    logger.error(message, *args)
+    print(formatted_message)
+
 def setup_logger(name: str, log_file: str, level=logging.INFO):
     """Tworzy logger zapisujący dane do pliku"""
     logger = logging.getLogger(name)
