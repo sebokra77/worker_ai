@@ -129,16 +129,22 @@ def build_api_request(
     if builder is None:
         raise ValueError('Brak funkcji budującej zapytanie dla wskazanego dostawcy.')
 
-    max_tokens_value = options.get('max_tokens', model_config.get('max_tokens'))
-    if not max_tokens_value:
-        max_tokens_value = 256
+    temperature_value = options.get('temperature')
+    if temperature_value in (None, ''):
+        temperature_value = model_config.get('temperature')
 
-    params = {
-        'prompt': prompt,
-        'temperature': options.get('temperature', model_config.get('temperature', 1.0)),
-        'max_tokens': max_tokens_value,
-        'system_prompt': options.get('system_prompt'),
-    }
+    max_tokens_value = options.get('max_tokens')
+    if max_tokens_value in (None, ''):
+        max_tokens_value = model_config.get('max_tokens')
+
+    params = {'prompt': prompt}
+    if temperature_value not in (None, ''):
+        params['temperature'] = temperature_value
+    if max_tokens_value not in (None, ''):
+        params['max_tokens'] = max_tokens_value
+    system_prompt = options.get('system_prompt')
+    if system_prompt not in (None, ''):
+        params['system_prompt'] = system_prompt
 
     prompt_with_instruction = _append_json_instruction(provider, prompt)
 
@@ -313,11 +319,13 @@ def _prepare_openai_request(
     payload = {
         'model': model_config.get('model_name'),
         'messages': messages,
-        'temperature': float(params['temperature']),
-        'max_completion_tokens': int(params['max_tokens']),
         'response_format': {'type': 'json_object'},
         'stream': False,
     }
+    if 'temperature' in params:
+        payload['temperature'] = float(params['temperature'])
+    if 'max_tokens' in params:
+        payload['max_completion_tokens'] = int(params['max_tokens'])
 
     return {
         'provider': 'OpenAI',
@@ -343,11 +351,13 @@ def _prepare_deepseek_request(
     payload = {
         'model': model_config.get('model_name'),
         'messages': messages,
-        'temperature': float(params['temperature']),
-        'max_completion_tokens': int(params['max_tokens']),
         'response_format': {'type': 'json_object'},
         'stream': False,
     }
+    if 'temperature' in params:
+        payload['temperature'] = float(params['temperature'])
+    if 'max_tokens' in params:
+        payload['max_completion_tokens'] = int(params['max_tokens'])
 
     return {
         'provider': 'DeepSeek',
@@ -373,10 +383,12 @@ def _prepare_google_request(
     model = genai.GenerativeModel(model_config.get('model_name'))
 
     generation_config = {
-        'temperature': float(params['temperature']),
-        'max_output_tokens': int(params['max_tokens']),
         'response_mime_type': 'application/json',
     }
+    if 'temperature' in params:
+        generation_config['temperature'] = float(params['temperature'])
+    if 'max_tokens' in params:
+        generation_config['max_output_tokens'] = int(params['max_tokens'])
 
     kwargs: Dict[str, Any] = {
         'contents': [
@@ -417,10 +429,12 @@ def _prepare_anthropic_request(
                 'content': prompt,
             }
         ],
-        'temperature': float(params['temperature']),
-        'max_output_tokens': int(params['max_tokens']),
         'stream': False,
     }
+    if 'temperature' in params:
+        kwargs['temperature'] = float(params['temperature'])
+    if 'max_tokens' in params:
+        kwargs['max_output_tokens'] = int(params['max_tokens'])
     if params.get('system_prompt'):
         kwargs['system'] = params['system_prompt']
 
