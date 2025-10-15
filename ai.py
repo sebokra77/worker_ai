@@ -4,7 +4,7 @@
 import sys
 
 from lib.load_config import load_env
-from lib.db_utils import setup_logger
+from lib.db_utils import log_error_and_print, setup_logger
 from lib.db_local import connect_local
 from lib.task import get_next_task
 from lib.ai_api import (
@@ -41,8 +41,8 @@ def main() -> None:
     print("Łączenie z bazą lokalną ...", end="")
     conn_local = connect_local(cfg)
     if not conn_local:
-        logger.error("Nie udało się połączyć z bazą lokalną.")
         print(" Error")
+        log_error_and_print(logger, "Nie udało się połączyć z bazą lokalną.")
         sys.exit(1)
     print(" OK")
 
@@ -68,11 +68,11 @@ def main() -> None:
         # Pobierz konfigurację modelu
         ai_model = fetch_ai_model_config(cursor_local, task['id_ai_model'])
         if not ai_model:
-            logger.error(
+            log_error_and_print(
+                logger,
                 "Nie znaleziono aktywnej konfiguracji modelu AI ID=%s.",
                 task['id_ai_model'],
             )
-            print("Brak konfiguracji modelu AI.")
             return
 
         provider = ai_model.get('provider')
@@ -80,21 +80,21 @@ def main() -> None:
 
         # Waliduj dostawcę
         if not is_provider_supported(provider):
-            logger.error(
+            log_error_and_print(
+                logger,
                 "Dostawca modelu AI %s nie jest obsługiwany.",
                 provider,
             )
-            print("Nieobsługiwany dostawca modelu AI.")
             return
 
         # Sprawdź dostępność konkretnego modelu
         if not is_model_supported(ai_model):
-            logger.error(
+            log_error_and_print(
+                logger,
                 "Model %s dostawcy %s nie jest dostępny w obsługiwanym API.",
                 model_name,
                 provider,
             )
-            print("Model AI nie jest dostępny.")
             return
 
         # Przygotuj dane zapytania do API (przykładowa treść promptu)
@@ -116,14 +116,18 @@ def main() -> None:
                 max_tokens=ai_model.get('max_tokens'),
             )
         except ValueError as api_error:
-            logger.error("Nie można przygotować zapytania API: %s", api_error)
-            print("Błąd przygotowania zapytania API.")
+            log_error_and_print(
+                logger,
+                "Nie można przygotować zapytania API: %s",
+                api_error,
+            )
             return
 
         try:
             response_text = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
-            logger.error(
+            log_error_and_print(
+                logger,
                 "Błąd wywołania modelu AI %s (%s): %s",
                 model_name,
                 provider,
@@ -131,20 +135,19 @@ def main() -> None:
             )
             append_task_error(cursor_local, task['id_task'], str(api_error))
             conn_local.commit()
-            print("Błąd podczas wywołania modelu AI.")
             return
 
         try:
             parsed_response = parse_json_response(response_text)
         except ValueError as validation_error:
-            logger.error(
+            log_error_and_print(
+                logger,
                 "Model AI zwrócił niepoprawny JSON dla zadania ID=%s: %s",
                 task['id_task'],
                 validation_error,
             )
             append_task_error(cursor_local, task['id_task'], str(validation_error))
             conn_local.commit()
-            print("Niepoprawny format odpowiedzi modelu AI.")
             return
 
         try:
@@ -155,7 +158,8 @@ def main() -> None:
             )
             conn_local.commit()
         except ValueError as update_error:
-            logger.error(
+            log_error_and_print(
+                logger,
                 "Nie udało się zaktualizować rekordów zadania ID=%s: %s",
                 task['id_task'],
                 update_error,
@@ -163,7 +167,6 @@ def main() -> None:
             conn_local.rollback()
             append_task_error(cursor_local, task['id_task'], str(update_error))
             conn_local.commit()
-            print("Błąd podczas aktualizacji rekordów w bazie.")
             return
 
         logger.info(

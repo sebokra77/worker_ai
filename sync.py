@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
 from lib.load_config import load_env
-from lib.db_utils import setup_logger
+from lib.db_utils import log_error_and_print, setup_logger
 from lib.db_local import connect_local
 from lib.db_remote import connect_remote
 from lib.task import get_next_task, get_remote_db_params
@@ -23,8 +23,8 @@ def main():
     print("Łącznie z DB local ...", end="")
     conn_local = connect_local(cfg)
     if not conn_local:
-        logger.error("Nie udało się połączyć z bazą lokalną.")
         print(" Error")
+        log_error_and_print(logger, "Nie udało się połączyć z bazą lokalną.")
         sys.exit(1)
     print(" OK")
     
@@ -44,8 +44,11 @@ def main():
     # Pobierz parametry połączenia z bazy zewnętrznej
     remote_params = get_remote_db_params(cursor_local, task['id_database_connection'])
     if not remote_params:
-        logger.error(f"Nie znaleziono konfiguracji bazy zewnętrznej ID={task['id_database_connection']}")
-        print(f"Nie znaleziono konfiguracji bazy zewnętrznej ID={task['id_database_connection']}")
+        log_error_and_print(
+            logger,
+            "Nie znaleziono konfiguracji bazy zewnętrznej ID=%s",
+            task['id_database_connection'],
+        )
         return
 
     # Nawiąż połączenie z bazą zewnętrzną
@@ -61,8 +64,11 @@ def main():
         try:
             fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
         except Exception as error:  # noqa: BLE001
-            logger.error("Synchronizacja zakończona błędem: %s", error)
-            print("Synchronizacja zakończona błędem")
+            log_error_and_print(
+                logger,
+                "Synchronizacja zakończona błędem: %s",
+                error,
+            )
         else:
             logger.info("Synchronizacja zakończona.")
             print("Synchronizacja zakończona.")
@@ -71,8 +77,11 @@ def main():
             resynch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
             fetch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
         except Exception as error:  # noqa: BLE001
-            logger.error("Synchronizacja zakończona błędem: %s", error)
-            print("Synchronizacja zakończona błędem")
+            log_error_and_print(
+                logger,
+                "Synchronizacja zakończona błędem: %s",
+                error,
+            )
         else:
             logger.info("Synchronizacja zakończona.")
             print("Synchronizacja zakończona.")
