@@ -354,6 +354,7 @@ def _prepare_openai_request(
 
     return {
         'provider': 'OpenAI',
+        'model_name': model_config.get('model_name'),
         'client': client,
         'callable': client.chat.completions.create,
         'payload': payload,
@@ -386,6 +387,7 @@ def _prepare_deepseek_request(
 
     return {
         'provider': 'DeepSeek',
+        'model_name': model_config.get('model_name'),
         'client': client,
         'callable': client.chat.completions.create,
         'payload': payload,
@@ -427,6 +429,7 @@ def _prepare_google_request(
 
     return {
         'provider': 'Google',
+        'model_name': model_config.get('model_name'),
         'client': model,
         'callable': model.generate_content,
         'payload': kwargs,
@@ -465,6 +468,7 @@ def _prepare_anthropic_request(
 
     return {
         'provider': 'Anthropic',
+        'model_name': model_config.get('model_name'),
         'client': client,
         'callable': client.messages.create,
         'payload': kwargs,

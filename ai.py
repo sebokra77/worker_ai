@@ -143,7 +143,10 @@ def main() -> None:
             )
             return
 
-        print("Rozpoczynam połączenie do AI...")
+        print(
+            "Rozpoczynam połączenie do AI... "
+            f"Dostawca: {provider}, model: {model_name}"
+        )
         try:
             response_text, tokens_input_total, tokens_output_total = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
@@ -173,10 +176,8 @@ def main() -> None:
             conn_local.commit()
             return
 
-        print("Zweryfikowane elementy JSON (każdy w osobnej linii):")
-        for element in parsed_response:
-            # Wyświetlamy elementy w formacie JSON dla czytelności
-            print(json.dumps(element, ensure_ascii=False))
+        print("Przetworzona struktura odpowiedzi AI:")
+        print(json.dumps(parsed_response, ensure_ascii=False, indent=2))
 
         try:
             original_text_lookup = {}
