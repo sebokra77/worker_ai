@@ -18,11 +18,12 @@ def build_correction_prompt(
     """
 
     rules: List[str] = [
+        "- Każdy elemeny <INPUT> musi być w tablicy JSON <OUTPUT_FORMAT>.",
         "- Nie zmieniaj znaczenia zdań.",
-        "- Jeżeli zdanie nie wymaga poprawy, zwróć 'text_corrected' jako pusty string.",
         "- Każdy wpis ma mieć klucz \"remote_id\" zgodny z numerem zdania.",
         "- Nie dodawaj żadnych komentarzy ani tekstu poza JSON.",
         "- Każde zdanie traktuj jako osobną jednostkę.",
+        "- Uwzględnij w odpowiedzi wszytskie <INPUT>. Jeżeli <INPUT> nie wymaga poprawy i ciąg zwracany jest identyczny, zwróć 'text_corrected' jako pusty string.",
     ]
 
     user_rules_value = (user_rules or '').strip()
@@ -31,13 +32,13 @@ def build_correction_prompt(
 
     lines: List[str] = [
         "<SYSTEM>",
-        "Model: zachowuj ścisły format wyjścia i nie dodawaj komentarzy. Jeśli cokolwiek jest niejasne, i tak zwróć wynik zgodny z <OUTPUT_FORMAT>.",
+        "Model: zachowuj ścisły format JSON wyjścia i nie dodawaj żadnych komentarzy ani tekstu poza JSON.",
         "</SYSTEM>",
-        "",
         "<TASK>",
-        "Popraw podane zdania pod względem ortograficznym, interpunkcyjnym i stylistycznym.",
+        "Dla każdego elementu z listy <INPUT> sprawdź, czy wymaga korekty ortograficznej, interpunkcyjnej lub stylistycznej.",
+        "Jeśli wymaga — popraw tekst.",
+        "Jeśli nie wymaga — pozostaw \"text_corrected\" jako pusty string \"\".",
         "</TASK>",
-        "",
         "<RULES>",
     ]
 
@@ -46,13 +47,11 @@ def build_correction_prompt(
     lines.extend(
         [
             "</RULES>",
-            "",
             "<OUTPUT_FORMAT>",
             "[",
             "  {\"remote_id\":1,\"text_corrected\":\"...\"}",
             "]",
             "</OUTPUT_FORMAT>",
-            "",
             "<INPUT>",
         ]
     )

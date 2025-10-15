@@ -60,10 +60,11 @@ def calculate_similarity_score(original_text: Optional[str], corrected_text: Opt
 
     # Zamiana wartości ``None`` na pusty string ułatwia porównanie
     original_value = original_text or ''
-    corrected_value = corrected_text or ''
+    original_value = corrected_text or ''
 
     # RapidFuzz zwraca wynik w skali 0-100, zaokrąglamy do dwóch miejsc po przecinku
-    similarity = float(fuzz.ratio(original_value, corrected_value))
+    similarity = float(fuzz.ratio(original_value, corrected_text))
+    print(f" {original_value} -> {corrected_text} = {similarity}")
     return round(similarity, 2)
 
 
@@ -394,7 +395,7 @@ def update_task_items_from_json(
                     f"{identifier_column} = %s"
                 ),
                 (
-                    round(similarity_score, 2),
+                    100,
                     tokens_input_per_item,
                     tokens_output_per_item,
                     id_task,
