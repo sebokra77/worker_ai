@@ -108,6 +108,8 @@ def main() -> None:
             return
 
         prompt_text = build_correction_prompt(pending_items)
+        print("Wygenerowany prompt do modelu AI:")
+        print(prompt_text)
         request_options = {}
         temperature_value = ai_model.get('temperature')
         if temperature_value not in (None, ''):
@@ -130,6 +132,7 @@ def main() -> None:
             )
             return
 
+        print("Rozpoczynam połączenie do AI...")
         try:
             response_text = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
@@ -144,6 +147,8 @@ def main() -> None:
             conn_local.commit()
             return
 
+        print("Odpowiedź modelu AI:")
+        print(response_text)
         try:
             parsed_response = parse_json_response(response_text)
         except ValueError as validation_error:
@@ -183,6 +188,7 @@ def main() -> None:
             model_name,
             provider,
         )
+        print(f"Zaktualizowano rekordy w liczbie: {updated}")
         print("Model AI zakończył przetwarzanie rekordów.")
     finally:
         cursor_local.close()
