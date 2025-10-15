@@ -148,7 +148,12 @@ def main() -> None:
             f"Dostawca: {provider}, model: {model_name}"
         )
         try:
-            response_text, tokens_input_total, tokens_output_total = execute_api_request(request_data)
+            (
+                response_text,
+                tokens_input_total,
+                tokens_output_total,
+                raw_response_dump,
+            ) = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
             log_error_and_print(
                 logger,
@@ -162,7 +167,7 @@ def main() -> None:
             return
 
         print("Odpowiedź modelu AI:")
-        print(response_text)
+        print(raw_response_dump)
         try:
             parsed_response = parse_json_response(response_text)
         except ValueError as validation_error:
@@ -177,7 +182,20 @@ def main() -> None:
             return
 
         print("Przetworzona struktura odpowiedzi AI:")
-        print(json.dumps(parsed_response, ensure_ascii=False, indent=2))
+        # Poniższa pętla ogranicza dane tylko do par remote_id i text_corrected
+        formatted_items = []
+        for item in parsed_response:
+            remote_value = item.get("remote_id")
+            if remote_value in (None, ""):
+                remote_value = item.get("id_task_item", item.get("id"))
+            formatted_items.append(
+                {
+                    "remote_id": remote_value,
+                    "text_corrected": item.get("text_corrected", ""),
+                }
+            )
+        for formatted_item in formatted_items:
+            print(json.dumps(formatted_item, ensure_ascii=False))
 
         try:
             original_text_lookup = {}
