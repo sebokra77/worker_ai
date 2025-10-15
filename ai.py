@@ -179,6 +179,23 @@ def main() -> None:
             print(json.dumps(element, ensure_ascii=False))
 
         try:
+            original_text_lookup = {}
+            for pending_item in pending_items:
+                text_value = pending_item.get('text_original')
+                remote_key = pending_item.get('remote_id')
+                local_key = pending_item.get('id_task_item')
+                if remote_key not in (None, ''):
+                    original_text_lookup[remote_key] = text_value
+                if local_key not in (None, ''):
+                    original_text_lookup[local_key] = text_value
+
+            expected_remote_ids = {
+                item.get('remote_id')
+                if item.get('remote_id') is not None
+                else item.get('id_task_item')
+                for item in pending_items
+                if item.get('remote_id') is not None or item.get('id_task_item') is not None
+            }
             updated = update_task_items_from_json(
                 cursor_local,
                 task['id_task'],
@@ -186,10 +203,7 @@ def main() -> None:
                 expected_identifiers,
                 tokens_input_total,
                 tokens_output_total,
-                {
-                    'remote_id': remote_texts,
-                    'id_task_item': local_texts,
-                },
+                original_text_lookup,
             )
             conn_local.commit()
         except ValueError as update_error:

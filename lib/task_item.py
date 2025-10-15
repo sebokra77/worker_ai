@@ -331,16 +331,6 @@ def update_task_items_from_json(
     expected_set = set(expected_remote_ids or [])
     processed_ids: Set[Any] = set()
     original_text_lookup = original_texts or {}
-    # Przygotowujemy słowniki dopasowane do rodzaju identyfikatora
-    if isinstance(original_text_lookup, dict) and (
-        'remote_id' in original_text_lookup or 'id_task_item' in original_text_lookup
-    ):
-        remote_texts = original_text_lookup.get('remote_id', {})
-        local_texts = original_text_lookup.get('id_task_item', {})
-    else:
-        # Zachowujemy wsteczną kompatybilność z płaskim słownikiem
-        remote_texts = original_text_lookup
-        local_texts = original_text_lookup
 
     # Podział liczby tokenów na poszczególne rekordy odpowiedzi
     item_count = len(items_list)
@@ -375,14 +365,12 @@ def update_task_items_from_json(
             )
         processed_ids.add(identifier_value)
 
-        if identifier_column == 'remote_id':
-            original_text = remote_texts.get(identifier_value)
-            if original_text is None and fallback_id not in (None, ''):
-                original_text = local_texts.get(fallback_id)
-        else:
-            original_text = local_texts.get(identifier_value)
-            if original_text is None and remote_id not in (None, ''):
-                original_text = remote_texts.get(remote_id)
+        original_text = original_text_lookup.get(identifier_value)
+        if original_text is None:
+            # Gdy nie znaleziono tekstu po identyfikatorze podstawowym, próbujemy identyfikatora alternatywnego
+            alternate_key = fallback_id if identifier_column == 'remote_id' else remote_id
+            if alternate_key not in (None, ''):
+                original_text = original_text_lookup.get(alternate_key)
 
         if original_text is None:
             cursor.execute(
