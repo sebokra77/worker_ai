@@ -2,7 +2,7 @@
 python-dotenv
 
 # Obsługa baz danych
-mysql-connector-python
+mysql-connector-python==8.1.0
 pyodbc
 psycopg2-binary
 # SQLite obsługiwane natywnie (moduł wbudowany w Python)
@@ -22,3 +22,4 @@ anthropic
 pytest
 mypy
 black
+
