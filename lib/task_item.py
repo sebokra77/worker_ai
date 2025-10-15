@@ -4,6 +4,8 @@ import json
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
+from rapidfuzz import fuzz
+
 
 def sanitize_identifier(name: str) -> str:
     """Waliduje nazwę identyfikatora SQL.
@@ -43,6 +45,26 @@ def calculate_hash(text: str, method: str) -> str:
         raise ValueError(f"Nieobsługiwany algorytm hashujący: {method}") from error
     hasher.update((text or '').encode('utf-8'))
     return hasher.hexdigest()
+
+
+def calculate_similarity_score(original_text: Optional[str], corrected_text: Optional[str]) -> float:
+    """Oblicza procent zgodności dwóch wersji tekstu.
+
+    Args:
+        original_text (Optional[str]): Oryginalny tekst zapisany w bazie.
+        corrected_text (Optional[str]): Tekst zwrócony po korekcie.
+
+    Returns:
+        float: Wartość w zakresie 0-100 z dokładnością do dwóch miejsc po przecinku.
+    """
+
+    # Zamiana wartości ``None`` na pusty string ułatwia porównanie
+    original_value = original_text or ''
+    corrected_value = corrected_text or ''
+
+    # RapidFuzz zwraca wynik w skali 0-100, zaokrąglamy do dwóch miejsc po przecinku
+    similarity = float(fuzz.ratio(original_value, corrected_value))
+    return round(similarity, 2)
 
 
 def rows_to_dicts(cursor, rows: Sequence[Sequence[Any]]) -> List[Dict[str, Any]]:
@@ -140,6 +162,42 @@ def fetch_pending_task_items(
             break
 
     return items[:max_items]
+
+
+def build_original_text_mappings(
+    items: Iterable[Dict[str, Any]]
+) -> Tuple[Set[Any], Dict[Any, Optional[str]], Dict[Any, Optional[str]]]:
+    """Buduje pomocnicze słowniki dla tekstów oryginalnych.
+
+    Args:
+        items (Iterable[dict[str, Any]]): Kolekcja rekordów przekazywana do modelu AI.
+
+    Returns:
+        tuple[set[Any], dict[Any, Optional[str]], dict[Any, Optional[str]]]:
+            Zestaw oczekiwanych identyfikatorów, mapowanie ``remote_id`` na tekst oraz
+            mapowanie ``id_task_item`` na tekst.
+    """
+
+    expected_identifiers: Set[Any] = set()
+    remote_lookup: Dict[Any, Optional[str]] = {}
+    local_lookup: Dict[Any, Optional[str]] = {}
+
+    for item in items:
+        # Zachowujemy oryginalne teksty dla późniejszego porównania wyniku AI
+        original_text = item.get('text_original')
+        remote_id = item.get('remote_id')
+        local_id = item.get('id_task_item')
+
+        if remote_id not in (None, ''):
+            expected_identifiers.add(remote_id)
+            remote_lookup[remote_id] = original_text
+        elif local_id not in (None, ''):
+            expected_identifiers.add(local_id)
+
+        if local_id not in (None, ''):
+            local_lookup[local_id] = original_text
+
+    return expected_identifiers, remote_lookup, local_lookup
 
 
 
@@ -243,6 +301,7 @@ def update_task_items_from_json(
     expected_remote_ids: Optional[Iterable[Any]] = None,
     tokens_input_total: Optional[int] = None,
     tokens_output_total: Optional[int] = None,
+    original_texts: Optional[Dict[Any, Optional[str]]] = None,
 ) -> int:
     """Aktualizuje rekordy ``task_item`` na podstawie danych z modelu AI.
 
@@ -253,6 +312,8 @@ def update_task_items_from_json(
         expected_remote_ids (Optional[Iterable[Any]]): Zbiór identyfikatorów oczekiwanych w odpowiedzi.
         tokens_input_total (Optional[int]): Łączna liczba tokenów wejściowych zwrócona przez model AI.
         tokens_output_total (Optional[int]): Łączna liczba tokenów wyjściowych zwrócona przez model AI.
+        original_texts (Optional[dict[Any, Optional[str]]]): Słownik mapujący identyfikatory rekordów
+            na tekst oryginalny pobrany przed wywołaniem modelu.
 
     Returns:
         int: Liczba zaktualizowanych rekordów.
@@ -269,6 +330,17 @@ def update_task_items_from_json(
     updated = 0
     expected_set = set(expected_remote_ids or [])
     processed_ids: Set[Any] = set()
+    original_text_lookup = original_texts or {}
+    # Przygotowujemy słowniki dopasowane do rodzaju identyfikatora
+    if isinstance(original_text_lookup, dict) and (
+        'remote_id' in original_text_lookup or 'id_task_item' in original_text_lookup
+    ):
+        remote_texts = original_text_lookup.get('remote_id', {})
+        local_texts = original_text_lookup.get('id_task_item', {})
+    else:
+        # Zachowujemy wsteczną kompatybilność z płaskim słownikiem
+        remote_texts = original_text_lookup
+        local_texts = original_text_lookup
 
     # Podział liczby tokenów na poszczególne rekordy odpowiedzi
     item_count = len(items_list)
@@ -303,26 +375,61 @@ def update_task_items_from_json(
             )
         processed_ids.add(identifier_value)
 
+        if identifier_column == 'remote_id':
+            original_text = remote_texts.get(identifier_value)
+            if original_text is None and fallback_id not in (None, ''):
+                original_text = local_texts.get(fallback_id)
+        else:
+            original_text = local_texts.get(identifier_value)
+            if original_text is None and remote_id not in (None, ''):
+                original_text = remote_texts.get(remote_id)
+
+        if original_text is None:
+            cursor.execute(
+                (
+                    "SELECT text_original FROM task_item WHERE id_task = %s AND "
+                    f"{identifier_column} = %s"
+                ),
+                (id_task, identifier_value),
+            )
+            original_row = cursor.fetchone()
+            original_text = extract_single_value(original_row, 'text_original')
+
         if text_corrected == '':
             # Gdy model AI nie wskazał zmian, kopiujemy tekst oryginalny
+            similarity_score = 100.0
             cursor.execute(
                 (
                     "UPDATE task_item SET text_corrected = text_original, status = 'unchanged', "
-                    "processed_at = NOW(), tokens_input = %s, tokens_output = %s "
+                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s "
                     "WHERE id_task = %s AND "
                     f"{identifier_column} = %s"
                 ),
-                (tokens_input_per_item, tokens_output_per_item, id_task, identifier_value),
+                (
+                    round(similarity_score, 2),
+                    tokens_input_per_item,
+                    tokens_output_per_item,
+                    id_task,
+                    identifier_value,
+                ),
             )
         else:
+            similarity_score = calculate_similarity_score(original_text, text_corrected)
             cursor.execute(
                 (
                     "UPDATE task_item SET text_corrected = %s, status = 'changed', "
-                    "processed_at = NOW(), tokens_input = %s, tokens_output = %s "
+                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s "
                     "WHERE id_task = %s AND "
                     f"{identifier_column} = %s"
                 ),
-                (text_corrected, tokens_input_per_item, tokens_output_per_item, id_task, identifier_value),
+                (
+                    text_corrected,
+                    similarity_score,
+                    tokens_input_per_item,
+                    tokens_output_per_item,
+                    id_task,
+                    identifier_value,
+                ),
             )
         if cursor.rowcount:
             updated += 1

@@ -18,6 +18,7 @@ from lib.ai_api import (
 from lib.ai_prompt import build_correction_prompt
 from lib.task_item import (
     append_task_error,
+    build_original_text_mappings,
     fetch_pending_task_items,
     parse_json_response,
     update_task_items_from_json,
@@ -108,6 +109,12 @@ def main() -> None:
             print("Brak rekordów pending dla zadania.")
             return
 
+        (
+            expected_identifiers,
+            remote_texts,
+            local_texts,
+        ) = build_original_text_mappings(pending_items)
+
         prompt_text = build_correction_prompt(
             pending_items,
             task.get('ai_user_rules'),
@@ -172,20 +179,17 @@ def main() -> None:
             print(json.dumps(element, ensure_ascii=False))
 
         try:
-            expected_remote_ids = {
-                item.get('remote_id')
-                if item.get('remote_id') is not None
-                else item.get('id_task_item')
-                for item in pending_items
-                if item.get('remote_id') is not None or item.get('id_task_item') is not None
-            }
             updated = update_task_items_from_json(
                 cursor_local,
                 task['id_task'],
                 parsed_response,
-                expected_remote_ids,
+                expected_identifiers,
                 tokens_input_total,
                 tokens_output_total,
+                {
+                    'remote_id': remote_texts,
+                    'id_task_item': local_texts,
+                },
             )
             conn_local.commit()
         except ValueError as update_error:

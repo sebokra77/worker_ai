@@ -12,6 +12,7 @@ psycopg2-binary
 
 # Obsługa wyjątków i ułatwienia developerskie
 rich
+rapidfuzz
 
 # Klienci AI
 openai
