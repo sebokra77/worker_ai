@@ -164,6 +164,42 @@ def fetch_pending_task_items(
     return items[:max_items]
 
 
+def build_original_text_mappings(
+    items: Iterable[Dict[str, Any]]
+) -> Tuple[Set[Any], Dict[Any, Optional[str]], Dict[Any, Optional[str]]]:
+    """Buduje pomocnicze słowniki dla tekstów oryginalnych.
+
+    Args:
+        items (Iterable[dict[str, Any]]): Kolekcja rekordów przekazywana do modelu AI.
+
+    Returns:
+        tuple[set[Any], dict[Any, Optional[str]], dict[Any, Optional[str]]]:
+            Zestaw oczekiwanych identyfikatorów, mapowanie ``remote_id`` na tekst oraz
+            mapowanie ``id_task_item`` na tekst.
+    """
+
+    expected_identifiers: Set[Any] = set()
+    remote_lookup: Dict[Any, Optional[str]] = {}
+    local_lookup: Dict[Any, Optional[str]] = {}
+
+    for item in items:
+        # Zachowujemy oryginalne teksty dla późniejszego porównania wyniku AI
+        original_text = item.get('text_original')
+        remote_id = item.get('remote_id')
+        local_id = item.get('id_task_item')
+
+        if remote_id not in (None, ''):
+            expected_identifiers.add(remote_id)
+            remote_lookup[remote_id] = original_text
+        elif local_id not in (None, ''):
+            expected_identifiers.add(local_id)
+
+        if local_id not in (None, ''):
+            local_lookup[local_id] = original_text
+
+    return expected_identifiers, remote_lookup, local_lookup
+
+
 
 def _extract_json_text(response_text: str) -> str:
     """Wydobywa fragment JSON z surowej odpowiedzi API.

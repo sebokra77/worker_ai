@@ -18,6 +18,7 @@ from lib.ai_api import (
 from lib.ai_prompt import build_correction_prompt
 from lib.task_item import (
     append_task_error,
+    build_original_text_mappings,
     fetch_pending_task_items,
     parse_json_response,
     update_task_items_from_json,
@@ -108,6 +109,12 @@ def main() -> None:
             print("Brak rekordów pending dla zadania.")
             return
 
+        (
+            expected_identifiers,
+            remote_texts,
+            local_texts,
+        ) = build_original_text_mappings(pending_items)
+
         prompt_text = build_correction_prompt(
             pending_items,
             task.get('ai_user_rules'),
@@ -193,7 +200,7 @@ def main() -> None:
                 cursor_local,
                 task['id_task'],
                 parsed_response,
-                expected_remote_ids,
+                expected_identifiers,
                 tokens_input_total,
                 tokens_output_total,
                 original_text_lookup,
