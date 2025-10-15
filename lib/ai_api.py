@@ -132,6 +132,23 @@ def build_api_request(
     return builder(model_config, prompt, params)
 
 
+def execute_api_request(request: Dict[str, Any]) -> str:
+    """Wysyła zapytanie do dostawcy AI i zwraca odpowiedź tekstową."""
+
+    if not request:
+        raise ValueError('Brak danych żądania API.')
+
+    provider = request.get('provider')
+    callable_object = request.get('callable')
+    payload = request.get('payload', {})
+    if callable_object is None:
+        raise ValueError('Brak funkcji wywołującej API w strukturze żądania.')
+
+    # Wysłanie zapytania bez zapamiętywania historii – każde żądanie zawiera tylko bieżący prompt
+    response = callable_object(**payload)
+    return _extract_response_text(provider, response)
+
+
 def _fallback_model_check(provider: str, model_name: str) -> bool:
     """Zapewnia weryfikację modelu na podstawie statycznej listy."""
 
@@ -377,6 +394,80 @@ def _prepare_anthropic_request(
         'callable': client.messages.create,
         'payload': kwargs,
     }
+
+
+def _extract_response_text(provider: str | None, response: Any) -> str:
+    """Wydobywa treść odpowiedzi z obiektu zwróconego przez różne biblioteki."""
+
+    if provider in {'OpenAI', 'DeepSeek'}:
+        choices = getattr(response, 'choices', None) or response.get('choices') if isinstance(response, dict) else None
+        if choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                message = first_choice.get('message') or {}
+                content = message.get('content')
+                if isinstance(content, list):
+                    return ''.join(
+                        part.get('text', '') if isinstance(part, dict) else str(part)
+                        for part in content
+                    )
+                if content:
+                    return content
+                if 'text' in first_choice:
+                    return str(first_choice['text'])
+            else:
+                message = getattr(first_choice, 'message', None)
+                if message is not None:
+                    content = getattr(message, 'content', None)
+                    if isinstance(content, list):
+                        return ''.join(
+                            getattr(part, 'text', str(part))
+                            for part in content
+                        )
+                    if content:
+                        return str(content)
+                text_value = getattr(first_choice, 'text', None)
+                if text_value:
+                    return str(text_value)
+        content = getattr(response, 'content', None)
+        if content:
+            return str(content)
+
+    if provider == 'Google':
+        text_value = getattr(response, 'text', None)
+        if text_value:
+            return str(text_value)
+        candidates = getattr(response, 'candidates', None) or response.get('candidates') if isinstance(response, dict) else None
+        if candidates:
+            candidate = candidates[0]
+            if isinstance(candidate, dict):
+                content = candidate.get('content', {})
+                parts = content.get('parts') if isinstance(content, dict) else candidate.get('parts')
+                if isinstance(parts, list):
+                    return ''.join(
+                        part.get('text', '') if isinstance(part, dict) else str(part)
+                        for part in parts
+                    )
+            else:
+                parts = getattr(candidate, 'parts', None)
+                if parts:
+                    return ''.join(getattr(part, 'text', str(part)) for part in parts)
+
+    if provider == 'Anthropic':
+        content = getattr(response, 'content', None)
+        if isinstance(content, list):
+            return ''.join(
+                part.get('text', '') if isinstance(part, dict) else getattr(part, 'text', str(part))
+                for part in content
+            )
+        if content:
+            return str(content)
+        completion = getattr(response, 'completion', None)
+        if completion:
+            return str(completion)
+
+    # Fallback na reprezentację tekstową obiektu odpowiedzi
+    return str(response)
 
 
 _PROVIDER_MODEL_CHECKERS: Dict[str, Callable[[Dict[str, Any]], bool]] = {
