@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 import re
@@ -198,6 +199,61 @@ def build_correction_prompt(
     return "\n".join(lines)
 
 
+def _extract_json_text(response_text: str) -> str:
+    """Wydobywa fragment JSON z surowej odpowiedzi API.
+
+    Args:
+        response_text (str): Pełna odpowiedź tekstowa zwrócona przez API.
+
+    Returns:
+        str: Fragment tekstu, który powinien być poprawnym JSON-em.
+    """
+
+    stripped = (response_text or "").strip()
+
+    # Jeżeli odpowiedź od razu zawiera JSON, nie wykonujemy dodatkowych operacji
+    if stripped.startswith("{") or stripped.startswith("["):
+        return stripped
+
+    marker = "content="
+    marker_index = stripped.find(marker)
+    if marker_index == -1:
+        return stripped
+
+    remainder = stripped[marker_index + len(marker):].lstrip()
+    if not remainder:
+        return stripped
+
+    quote = remainder[0]
+    if quote not in {'"', '\''}:
+        return stripped
+
+    # Szukamy końcowego cudzysłowu z uwzględnieniem znaków ucieczki
+    escape = False
+    closing_index = None
+    for idx in range(1, len(remainder)):
+        char_value = remainder[idx]
+        if escape:
+            escape = False
+            continue
+        if char_value == "\\":
+            escape = True
+            continue
+        if char_value == quote:
+            closing_index = idx
+            break
+
+    if closing_index is None:
+        return stripped
+
+    quoted_section = remainder[: closing_index + 1]
+    try:
+        # literal_eval poprawnie zinterpretuje sekwencje ucieczki
+        return ast.literal_eval(quoted_section)
+    except (SyntaxError, ValueError):
+        return stripped
+
+
 def parse_json_response(response_text: str) -> List[Dict[str, Any]]:
     """Waliduje i konwertuje odpowiedź modelu AI na strukturę Python.
 
@@ -211,8 +267,10 @@ def parse_json_response(response_text: str) -> List[Dict[str, Any]]:
         ValueError: Gdy odpowiedź nie jest poprawnym JSON-em lub nie spełnia wymagań.
     """
 
+    json_text = _extract_json_text(response_text)
+
     try:
-        parsed = json.loads(response_text)
+        parsed = json.loads(json_text)
     except json.JSONDecodeError as error:  # noqa: B904
         raise ValueError('Odpowiedź modelu AI nie jest poprawnym JSON-em.') from error
 
