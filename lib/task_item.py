@@ -60,11 +60,11 @@ def calculate_similarity_score(original_text: Optional[str], corrected_text: Opt
 
     # Zamiana wartości ``None`` na pusty string ułatwia porównanie
     original_value = original_text or ''
-    original_value = corrected_text or ''
+    corrected_value = corrected_text or ''
 
     # RapidFuzz zwraca wynik w skali 0-100, zaokrąglamy do dwóch miejsc po przecinku
-    similarity = float(fuzz.ratio(original_value, corrected_text))
-    print(f" {original_value} -> {corrected_text} = {similarity}")
+    similarity = float(fuzz.ratio(original_value, corrected_value))
+    print(f" {original_value} -> {corrected_value} = {similarity}")
     return round(similarity, 2)
 
 
