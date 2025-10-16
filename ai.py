@@ -153,6 +153,7 @@ def main() -> None:
                 tokens_input_total,
                 tokens_output_total,
                 raw_response_dump,
+                response_metadata,
             ) = execute_api_request(request_data)
         except Exception as api_error:  # noqa: BLE001
             log_error_and_print(
@@ -215,6 +216,10 @@ def main() -> None:
                 for item in pending_items
                 if item.get('remote_id') is not None or item.get('id_task_item') is not None
             }
+            response_ai_model = (response_metadata or {}).get('model')
+            if response_ai_model in (None, ''):
+                response_ai_model = model_name
+            response_finish_reason = (response_metadata or {}).get('finish_reason')
             updated = update_task_items_from_json(
                 cursor_local,
                 task['id_task'],
@@ -223,6 +228,8 @@ def main() -> None:
                 tokens_input_total,
                 tokens_output_total,
                 original_text_lookup,
+                response_ai_model,
+                response_finish_reason,
             )
             conn_local.commit()
         except ValueError as update_error:
