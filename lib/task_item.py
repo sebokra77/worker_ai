@@ -64,7 +64,6 @@ def calculate_similarity_score(original_text: Optional[str], corrected_text: Opt
 
     # RapidFuzz zwraca wynik w skali 0-100, zaokrąglamy do dwóch miejsc po przecinku
     similarity = float(fuzz.ratio(original_value, corrected_value))
-    print(f" {original_value} -> {corrected_value} = {similarity}")
     return round(similarity, 2)
 
 
@@ -476,6 +475,21 @@ def update_task_items_from_table(
         corrected_text = str(text_corrected)
 
         similarity_score = calculate_similarity_score(original_text, corrected_text)
+       
+        #print(f"\033[90m {original_text} -> {corrected_text} = {similarity_score}\033[0m")
+        if similarity_score >= 95:
+            color = "\033[32m"   # zielony
+        elif similarity_score >= 90:
+            color = "\033[33m"   # żółty
+        else:
+            color = "\033[31m"   # czerwony
+
+        # reset koloru
+        reset = "\033[0m"
+
+        # wypisanie tekstu
+        print(f"\033[90m{original_text} -> {corrected_text} = \033[0m{color}{similarity_score:.1f}%{reset}")
+
         status_value = 'unchanged' if corrected_text == original_text else 'changed'
 
         cursor.execute(

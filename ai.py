@@ -31,7 +31,7 @@ def main() -> None:
 
     # Załaduj konfigurację i logger
     try:
-        print("Wczytywanie konfiguracji : ", end="")
+        print("Wczytywanie konfiguracji ... ", end="", flush=True)
         cfg = load_env()
 
     except ValueError as error:
@@ -42,7 +42,7 @@ def main() -> None:
     logger = setup_logger('ai', 'logs/ai.log')
 
     # Połączenie z bazą lokalną
-    print("Łączenie z bazą lokalną ...", end="")
+    print("Łączenie z bazą lokalną ... ", end="", flush=True)
     conn_local = connect_local(cfg)
     if not conn_local:
         print(" Error")
@@ -54,7 +54,7 @@ def main() -> None:
 
     try:
         # Pobierz zadanie oczekujące na obsługę
-        print("Pobieranie zadania : ", end="")
+        print("Pobieranie zadania ... ", end="", flush=True)
         task = get_next_task(cursor_local)
         if not task:
             logger.info("Brak zadań do obsługi przez AI.")
@@ -126,8 +126,8 @@ def main() -> None:
             processing_table,
             task.get('ai_user_rules'),
         )
-        print("Wygenerowany prompt do modelu AI:")
-        print(prompt_text)
+        print("Generuje prompt do modelu AI ... ", end="", flush=True)    
+        #print(prompt_text)
         request_options = {}
         temperature_value = ai_model.get('temperature')
         if temperature_value not in (None, ''):
@@ -149,11 +149,8 @@ def main() -> None:
                 api_error,
             )
             return
-
-        print(
-            "Rozpoczynam połączenie do AI... "
-            f"Dostawca: {provider}, model: {model_name}"
-        )
+        print("\033[32mOK\033[0m") 
+        print(f"Wysyłam zapytanie do AI {provider} model {model_name} ... ", end="", flush=True)
         try:
             (
                 response_text,
@@ -173,9 +170,11 @@ def main() -> None:
             append_task_error(cursor_local, task['id_task'], str(api_error))
             conn_local.commit()
             return
+        print("\033[32mOK\033[0m") 
 
-        print("Odpowiedź modelu AI:")
-        print(raw_response_dump)
+        #print("Odpowiedź modelu AI:")
+        #print(raw_response_dump)
+        print(f"Sprawdzam poprawność odpowiedzi AI ... ", end="", flush=True)
         try:
             parsed_response = parse_json_response(response_text)
         except ValueError as validation_error:
@@ -188,8 +187,9 @@ def main() -> None:
             append_task_error(cursor_local, task['id_task'], str(validation_error))
             conn_local.commit()
             return
-
-        print("Przetworzona struktura odpowiedzi AI:")
+        
+        print("\033[32mOK\033[0m") 
+        print("Przetworzona struktura odpowiedzi AI ... ")
         # Poniższa pętla ogranicza dane tylko do par remote_id i text_corrected
         formatted_items = []
         for item in parsed_response:
@@ -202,8 +202,8 @@ def main() -> None:
                     "text_corrected": item.get("text_corrected", ""),
                 }
             )
-        for formatted_item in formatted_items:
-            print(json.dumps(formatted_item, ensure_ascii=False))
+        #for formatted_item in formatted_items:
+        #    print(json.dumps(formatted_item, ensure_ascii=False))
 
         try:
             update_processing_table_with_response(
@@ -244,12 +244,11 @@ def main() -> None:
             model_name,
             provider,
         )
-        print(f"Zaktualizowano rekordy w liczbie: {updated}")
-        print("Model AI zakończył przetwarzanie rekordów.")
+        print(f"Zaktualizowano rekordy w liczbie: \033[32m{updated}\033[0m")
     finally:
         cursor_local.close()
         conn_local.close()
 
-
+    print("\033[32mOK\033[0m")
 if __name__ == "__main__":
     main()

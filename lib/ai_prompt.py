@@ -7,16 +7,7 @@ def build_correction_prompt(
     records: Iterable[Dict[str, Any]],
     user_rules: Optional[str] = None,
 ) -> str:
-    """Tworzy prompt w zdefiniowanym formacie dla modeli korekty tekstu.
-
-    Args:
-        records (Iterable[dict[str, Any]]): Lista rekordów z treścią do korekty.
-        user_rules (Optional[str]): Dodatkowe reguły przekazywane przez użytkownika.
-
-    Returns:
-        str: Gotowy prompt przygotowany do wysłania do modelu AI.
-    """
-
+ 
     rules: List[str] = [
         "- Każdy elemeny <INPUT> musi być w tablicy JSON <OUTPUT_FORMAT>.",
         "- Nie zmieniaj znaczenia zdań.",
@@ -35,8 +26,8 @@ def build_correction_prompt(
         "Model: zachowuj ścisły format JSON wyjścia i nie dodawaj żadnych komentarzy ani tekstu poza JSON.",
         "</SYSTEM>",
         "<TASK>",
-        "Dla każdego elementu z listy <INPUT> sprawdź, czy wymaga korekty ortograficznej, interpunkcyjnej lub stylistycznej.",
-        "Jeśli wymaga — popraw tekst.",
+        "Dla każdego elementu z listy <INPUT> zrób korektę ortograficzną, interpunkcyjną lub stylistyczną jeśli wymaga.",
+        "Nie usuwaj wyrazów tylko koreguj tekst. ",
         "Jeśli nie wymaga — pozostaw \"text_corrected\" jako pusty string \"\".",
         "</TASK>",
         "<RULES>",

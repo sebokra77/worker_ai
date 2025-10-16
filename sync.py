@@ -10,35 +10,35 @@ from lib.task_item import fetch_remote_batch, resynch_remote_batch
 def main():
     # Załaduj konfigurację i logger
     try:
-        print("Wczytywanie konfiguracji ",)
+        print("Wczytywanie konfiguracji ",end="")
         cfg = load_env()
     except ValueError as error:
         print(f"Błąd konfiguracji środowiska w pliku .env: {error}")
         sys.exit(1)
-    logger = setup_logger('sync', 'logs/sync.log')
-    print("Łącznie z DB ...")
-    logger.info("=== Rozpoczęcie synchronizacji ===")
+    print("\033[32mOK\033[0m") 
 
+    logger = setup_logger('sync', 'logs/sync.log')
+    
     # Połączenie z bazą lokalną
-    print("Łącznie z DB local ...", end="")
+    print("Łącznie z DB local : ", end="")
     conn_local = connect_local(cfg)
     if not conn_local:
         print(" Error")
         log_error_and_print(logger, "Nie udało się połączyć z bazą lokalną.")
         sys.exit(1)
-    print(" OK")
+    print("\033[32mOK\033[0m") 
     
     cursor_local = conn_local.cursor(dictionary=True)
 
     # Pobierz zadanie do wykonania
-    print("Pobieranie taska ...")
+    print("Pobieranie taska : ", end="")
     task = get_next_task(cursor_local)
     #print(task)
     if not task:
         logger.info("Brak zadań do synchronizacji.")
         print("Brak zadań do synchronizacji.")
         return
-
+    print("\033[32mOK\033[0m") 
     logger.info(f"Pobrano zadanie ID={task['id_task']} z bazy {task['id_database_connection']}")
 
     # Pobierz parametry połączenia z bazy zewnętrznej
