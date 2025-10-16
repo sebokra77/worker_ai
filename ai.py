@@ -7,7 +7,7 @@ import sys
 from lib.load_config import load_env
 from lib.db_utils import log_error_and_print, setup_logger
 from lib.db_local import connect_local
-from lib.task import get_next_task
+from lib.task import get_next_task_to_ai
 from lib.ai_api import (
     build_api_request,
     execute_api_request,
@@ -55,7 +55,7 @@ def main() -> None:
     try:
         # Pobierz zadanie oczekujące na obsługę
         print("Pobieranie zadania ... ", end="", flush=True)
-        task = get_next_task(cursor_local)
+        task = get_next_task_to_ai(cursor_local)
         if not task:
             logger.info("Brak zadań do obsługi przez AI.")
             print("Brak zadań do obsługi przez AI.")

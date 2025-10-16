@@ -2,7 +2,18 @@ def get_next_task(cursor):
     """Pobiera najstarsze zadanie ze statusem new/in_progress/resync"""
     sql = """
         SELECT * FROM task
-        WHERE status IN ('new','in_progress','resync')
+        WHERE status IN ('new','sync','resync')
+        ORDER BY id_task ASC
+        LIMIT 1
+    """
+    cursor.execute(sql)
+    return cursor.fetchone()
+
+def get_next_task_to_ai(cursor):
+    """Pobiera najstarsze zadanie ze statusem new/in_progress/resync"""
+    sql = """
+        SELECT * FROM task
+        WHERE status IN ('ai')
         ORDER BY id_task ASC
         LIMIT 1
     """
