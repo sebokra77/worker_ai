@@ -476,7 +476,7 @@ def update_task_items_from_table(
 
         similarity_score = calculate_similarity_score(original_text, corrected_text)
        
-        #print(f"\033[90m {original_text} -> {corrected_text} = {similarity_score}\033[0m")
+        #print(f"\033[90m [{identifier_value}] {original_text} -> {corrected_text} = {similarity_score}\033[0m")
         if similarity_score >= 95:
             color = "\033[32m"   # zielony
         elif similarity_score >= 90:
@@ -488,7 +488,7 @@ def update_task_items_from_table(
         reset = "\033[0m"
 
         # wypisanie tekstu
-        print(f"\033[90m{original_text} -> {corrected_text} = \033[0m{color}{similarity_score:.1f}%{reset}")
+        print(f"\033[90m[{identifier_value}] {original_text} -> {corrected_text} = \033[0m{color}{similarity_score:.1f}%{reset}")
 
         status_value = 'unchanged' if corrected_text == original_text else 'changed'
 

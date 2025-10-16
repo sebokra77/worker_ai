@@ -127,7 +127,7 @@ def main() -> None:
             task.get('ai_user_rules'),
         )
         print("Generuje prompt do modelu AI ... ", end="", flush=True)    
-        #print(prompt_text)
+        #print(f"\033[90m{prompt_text}\033[0m")
         request_options = {}
         temperature_value = ai_model.get('temperature')
         if temperature_value not in (None, ''):
