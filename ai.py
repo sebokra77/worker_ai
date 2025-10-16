@@ -7,7 +7,7 @@ import sys
 from lib.load_config import load_env
 from lib.db_utils import log_error_and_print, setup_logger
 from lib.db_local import connect_local
-from lib.task import get_next_task_to_ai
+from lib.task import get_next_task_to_ai, update_task_ai_progress
 from lib.ai_api import (
     build_api_request,
     execute_api_request,
@@ -224,6 +224,7 @@ def main() -> None:
                 response_ai_model,
                 response_finish_reason,
             )
+            progress_report = update_task_ai_progress(cursor_local, task['id_task'])
             conn_local.commit()
         except ValueError as update_error:
             log_error_and_print(
@@ -243,6 +244,18 @@ def main() -> None:
             task['id_task'],
             model_name,
             provider,
+        )
+        logger.info(
+            (
+                "Postęp zadania ID=%s: changed=%s, unchanged=%s, "
+                "processed=%s/%s (%.2f%%)."
+            ),
+            task['id_task'],
+            progress_report.get('changed_count'),
+            progress_report.get('unchanged_count'),
+            progress_report.get('processed_total'),
+            progress_report.get('records_total'),
+            progress_report.get('progress_value'),
         )
         print(f"Zaktualizowano rekordy w liczbie: \033[32m{updated}\033[0m")
     finally:
