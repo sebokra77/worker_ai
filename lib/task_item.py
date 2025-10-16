@@ -202,6 +202,130 @@ def build_original_text_mappings(
 
 
 
+def build_processing_table(items: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Tworzy tabelę pomocniczą z danymi przekazywanymi do modelu AI.
+
+    Args:
+        items (Iterable[dict[str, Any]]): Lista rekordów pobranych z bazy lokalnej.
+
+    Returns:
+        list[dict[str, Any]]: Tabela zawierająca kolumny ``remote_id``, ``id_task_item``,
+        ``text_original`` oraz ``text_corrected``.
+    """
+
+    processing_table: List[Dict[str, Any]] = []
+    for item in items:
+        # Zapamiętujemy identyfikatory oraz tekst oryginalny dla dalszych etapów
+        original_value = item.get('text_original')
+        if original_value is None:
+            original_value = ''
+        else:
+            original_value = str(original_value)
+
+        processing_table.append(
+            {
+                'remote_id': item.get('remote_id'),
+                'id_task_item': item.get('id_task_item'),
+                'text_original': original_value,
+                'text_corrected': None,
+            }
+        )
+
+    return processing_table
+
+
+
+def update_processing_table_with_response(
+    processing_table: List[Dict[str, Any]],
+    response_items: Iterable[Dict[str, Any]],
+    expected_remote_ids: Optional[Iterable[Any]] = None,
+) -> None:
+    """Uzupełnia tabelę pomocniczą odpowiedzią zwróconą przez model AI.
+
+    Args:
+        processing_table (list[dict[str, Any]]): Wcześniej zbudowana tabela rekordów.
+        response_items (Iterable[dict[str, Any]]): Dane JSON otrzymane z modelu AI.
+        expected_remote_ids (Optional[Iterable[Any]]): Zbiór identyfikatorów,
+            których spodziewamy się w odpowiedzi.
+
+    Raises:
+        ValueError: Gdy odpowiedź AI jest niekompletna lub zawiera błędne ID.
+    """
+
+    if not processing_table:
+        return
+
+    # Mapowanie ID ułatwia szybkie wyszukanie rekordów w tabeli
+    index_remote: Dict[Any, Dict[str, Any]] = {}
+    index_local: Dict[Any, Dict[str, Any]] = {}
+    for entry in processing_table:
+        remote_key = entry.get('remote_id')
+        local_key = entry.get('id_task_item')
+        if remote_key not in (None, ''):
+            index_remote[remote_key] = entry
+        if local_key not in (None, ''):
+            index_local[local_key] = entry
+
+    expected_set: Set[Any] = set(expected_remote_ids or [])
+    processed_entries: Set[int] = set()
+
+    for item in response_items:
+        remote_id = item.get('remote_id')
+        fallback_id = item.get('id_task_item', item.get('id'))
+        text_corrected = item.get('text_corrected')
+
+        if text_corrected is None:
+            raise ValueError('Element odpowiedzi nie zawiera pola text_corrected.')
+
+        # Odnajdujemy rekord w tabeli według dostępnych identyfikatorów
+        entry: Optional[Dict[str, Any]] = None
+        identifier_value: Any = None
+        if remote_id not in (None, '') and remote_id in index_remote:
+            entry = index_remote[remote_id]
+            identifier_value = remote_id
+        elif fallback_id not in (None, '') and fallback_id in index_local:
+            entry = index_local[fallback_id]
+            identifier_value = fallback_id
+
+        if entry is None:
+            raise ValueError(
+                f"Model AI zwrócił nieznany identyfikator rekordu: {remote_id or fallback_id}."
+            )
+
+        entry_key = id(entry)
+        if entry_key in processed_entries:
+            raise ValueError(
+                f"Model AI zwrócił zduplikowany wynik dla identyfikatora: {identifier_value}."
+            )
+        processed_entries.add(entry_key)
+
+        if expected_set and identifier_value not in expected_set:
+            raise ValueError(
+                f"Identyfikator {identifier_value} nie został oczekiwany w odpowiedzi modelu."
+            )
+
+        # Pusta odpowiedź oznacza, że należy pozostawić tekst w wersji oryginalnej
+        if text_corrected == '':
+            entry['text_corrected'] = entry.get('text_original') or ''
+        else:
+            entry['text_corrected'] = str(text_corrected)
+
+    missing_identifiers = []
+    for entry in processing_table:
+        if entry.get('text_corrected') is None:
+            identifier_value = entry.get('remote_id')
+            if identifier_value in (None, ''):
+                identifier_value = entry.get('id_task_item')
+            missing_identifiers.append(identifier_value)
+
+    if missing_identifiers:
+        joined_missing = ', '.join(str(value) for value in missing_identifiers)
+        raise ValueError(
+            'Model AI nie zwrócił wyników dla identyfikatorów: ' + joined_missing
+        )
+
+
+
 def _extract_json_text(response_text: str) -> str:
     """Wydobywa fragment JSON z surowej odpowiedzi API.
 
@@ -295,139 +419,85 @@ def parse_json_response(response_text: str) -> List[Dict[str, Any]]:
     return normalised
 
 
-def update_task_items_from_json(
+def update_task_items_from_table(
     cursor,
     id_task: int,
-    response_items: Iterable[Dict[str, Any]],
-    expected_remote_ids: Optional[Iterable[Any]] = None,
+    processing_table: Iterable[Dict[str, Any]],
     tokens_input_total: Optional[int] = None,
     tokens_output_total: Optional[int] = None,
-    original_texts: Optional[Dict[Any, Optional[str]]] = None,
     ai_model_name: Optional[str] = None,
     finish_reason_value: Optional[str] = None,
 ) -> int:
-    """Aktualizuje rekordy ``task_item`` na podstawie danych z modelu AI.
+    """Aktualizuje rekordy ``task_item`` na podstawie tabeli z danymi AI.
 
     Args:
         cursor: Kursor połączenia z bazą lokalną.
         id_task (int): Identyfikator zadania powiązanego z rekordami.
-        response_items (Iterable[dict[str, Any]]): Dane przekazane z modelu AI.
-        expected_remote_ids (Optional[Iterable[Any]]): Zbiór identyfikatorów oczekiwanych w odpowiedzi.
-        tokens_input_total (Optional[int]): Łączna liczba tokenów wejściowych zwrócona przez model AI.
-        tokens_output_total (Optional[int]): Łączna liczba tokenów wyjściowych zwrócona przez model AI.
-        original_texts (Optional[dict[Any, Optional[str]]]): Słownik mapujący identyfikatory rekordów
-            na tekst oryginalny pobrany przed wywołaniem modelu.
-        ai_model_name (Optional[str]): Nazwa modelu AI zwrócona w odpowiedzi.
-        finish_reason_value (Optional[str]): Powód zakończenia generowania odpowiedzi.
+        processing_table (Iterable[dict[str, Any]]): Lista rekordów uzupełnionych
+            danymi zwróconymi przez model AI.
+        tokens_input_total (Optional[int]): Łączna liczba tokenów wejściowych.
+        tokens_output_total (Optional[int]): Łączna liczba tokenów wyjściowych.
+        ai_model_name (Optional[str]): Nazwa modelu AI, która ma zostać zapisana.
+        finish_reason_value (Optional[str]): Powód zakończenia generowania.
 
     Returns:
         int: Liczba zaktualizowanych rekordów.
 
     Raises:
-        ValueError: Gdy rekord odpowiedzi nie zawiera wymaganych pól lub narusza walidację.
+        ValueError: Gdy brakuje danych do aktualizacji rekordów.
     """
 
-    # Konwertujemy elementy odpowiedzi do listy, aby móc je przeliczać wielokrotnie
-    items_list = list(response_items)
-    if not items_list:
+    records = list(processing_table)
+    if not records:
         return 0
 
     updated = 0
-    expected_set = set(expected_remote_ids or [])
-    processed_ids: Set[Any] = set()
-    original_text_lookup = original_texts or {}
-
-    # Podział liczby tokenów na poszczególne rekordy odpowiedzi
-    item_count = len(items_list)
+    item_count = len(records)
     tokens_input_value = int(tokens_input_total or 0)
     tokens_output_value = int(tokens_output_total or 0)
     tokens_input_per_item = tokens_input_value // item_count if item_count else 0
     tokens_output_per_item = tokens_output_value // item_count if item_count else 0
 
-    # Iterujemy po danych z modelu, walidując minimalny zestaw pól
-    for item in items_list:
-        remote_id = item.get('remote_id')
-        fallback_id = item.get('id_task_item', item.get('id'))
-        text_corrected = item.get('text_corrected')
-        if remote_id is None and fallback_id is None:
-            raise ValueError('Element odpowiedzi nie zawiera pola remote_id/id.')
-        if text_corrected is None:
-            raise ValueError('Element odpowiedzi nie zawiera pola text_corrected.')
-
+    for entry in records:
+        identifier_value = entry.get('remote_id')
         identifier_column = 'remote_id'
-        identifier_value: Any = remote_id
         if identifier_value in (None, ''):
+            identifier_value = entry.get('id_task_item')
             identifier_column = 'id_task_item'
-            identifier_value = fallback_id
 
-        if expected_set and identifier_value not in expected_set:
-            raise ValueError(
-                f"Remote_id {identifier_value} nie znajduje się na liście oczekiwanych rekordów."
-            )
-        if identifier_value in processed_ids:
-            raise ValueError(
-                f"Remote_id {identifier_value} zostało zwrócone wielokrotnie w odpowiedzi."
-            )
-        processed_ids.add(identifier_value)
+        if identifier_value in (None, ''):
+            raise ValueError('Rekord nie posiada remote_id ani id_task_item do aktualizacji.')
 
-        original_text = original_text_lookup.get(identifier_value)
-        if original_text is None:
-            # Gdy nie znaleziono tekstu po identyfikatorze podstawowym, próbujemy identyfikatora alternatywnego
-            alternate_key = fallback_id if identifier_column == 'remote_id' else remote_id
-            if alternate_key not in (None, ''):
-                original_text = original_text_lookup.get(alternate_key)
+        text_corrected = entry.get('text_corrected')
+        if text_corrected is None:
+            raise ValueError(f'Rekord {identifier_value} nie został uzupełniony odpowiedzią AI.')
 
-        if original_text is None:
-            cursor.execute(
-                (
-                    "SELECT text_original FROM task_item WHERE id_task = %s AND "
-                    f"{identifier_column} = %s"
-                ),
-                (id_task, identifier_value),
-            )
-            original_row = cursor.fetchone()
-            original_text = extract_single_value(original_row, 'text_original')
+        original_text = entry.get('text_original') or ''
+        corrected_text = str(text_corrected)
 
-        if text_corrected == '':
-            # Gdy model AI nie wskazał zmian, kopiujemy tekst oryginalny
-            similarity_score = 100.0
-            cursor.execute(
-                (
-                    "UPDATE task_item SET text_corrected = text_original, status = 'unchanged', "
-                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s, "
-                    "ai_model = %s, finish_reason = %s WHERE id_task = %s AND "
-                    f"{identifier_column} = %s"
-                ),
-                (
-                    100,
-                    tokens_input_per_item,
-                    tokens_output_per_item,
-                    ai_model_name,
-                    finish_reason_value,
-                    id_task,
-                    identifier_value,
-                ),
-            )
-        else:
-            similarity_score = calculate_similarity_score(original_text, text_corrected)
-            cursor.execute(
-                (
-                    "UPDATE task_item SET text_corrected = %s, status = 'changed', "
-                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s, "
-                    "ai_model = %s, finish_reason = %s WHERE id_task = %s AND "
-                    f"{identifier_column} = %s"
-                ),
-                (
-                    text_corrected,
-                    similarity_score,
-                    tokens_input_per_item,
-                    tokens_output_per_item,
-                    ai_model_name,
-                    finish_reason_value,
-                    id_task,
-                    identifier_value,
-                ),
-            )
+        similarity_score = calculate_similarity_score(original_text, corrected_text)
+        status_value = 'unchanged' if corrected_text == original_text else 'changed'
+
+        cursor.execute(
+            (
+                "UPDATE task_item SET text_corrected = %s, status = %s, "
+                "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s, "
+                "ai_model = %s, finish_reason = %s WHERE id_task = %s AND "
+                f"{identifier_column} = %s"
+            ),
+            (
+                corrected_text,
+                status_value,
+                similarity_score,
+                tokens_input_per_item,
+                tokens_output_per_item,
+                ai_model_name,
+                finish_reason_value,
+                id_task,
+                identifier_value,
+            ),
+        )
+
         if cursor.rowcount:
             updated += 1
 

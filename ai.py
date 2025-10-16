@@ -18,10 +18,11 @@ from lib.ai_api import (
 from lib.ai_prompt import build_correction_prompt
 from lib.task_item import (
     append_task_error,
-    build_original_text_mappings,
+    build_processing_table,
     fetch_pending_task_items,
     parse_json_response,
-    update_task_items_from_json,
+    update_processing_table_with_response,
+    update_task_items_from_table,
 )
 
 
@@ -109,14 +110,18 @@ def main() -> None:
             print("Brak rekordów pending dla zadania.")
             return
 
-        (
-            expected_identifiers,
-            remote_texts,
-            local_texts,
-        ) = build_original_text_mappings(pending_items)
+        processing_table = build_processing_table(pending_items)
+        expected_identifiers = {
+            entry['remote_id']
+            if entry.get('remote_id') not in (None, '')
+            else entry.get('id_task_item')
+            for entry in processing_table
+            if entry.get('remote_id') not in (None, '')
+            or entry.get('id_task_item') not in (None, '')
+        }
 
         prompt_text = build_correction_prompt(
-            pending_items,
+            processing_table,
             task.get('ai_user_rules'),
         )
         print("Wygenerowany prompt do modelu AI:")
@@ -199,35 +204,21 @@ def main() -> None:
             print(json.dumps(formatted_item, ensure_ascii=False))
 
         try:
-            original_text_lookup = {}
-            for pending_item in pending_items:
-                text_value = pending_item.get('text_original')
-                remote_key = pending_item.get('remote_id')
-                local_key = pending_item.get('id_task_item')
-                if remote_key not in (None, ''):
-                    original_text_lookup[remote_key] = text_value
-                if local_key not in (None, ''):
-                    original_text_lookup[local_key] = text_value
-
-            expected_remote_ids = {
-                item.get('remote_id')
-                if item.get('remote_id') is not None
-                else item.get('id_task_item')
-                for item in pending_items
-                if item.get('remote_id') is not None or item.get('id_task_item') is not None
-            }
+            update_processing_table_with_response(
+                processing_table,
+                parsed_response,
+                expected_identifiers,
+            )
             response_ai_model = (response_metadata or {}).get('model')
             if response_ai_model in (None, ''):
                 response_ai_model = model_name
             response_finish_reason = (response_metadata or {}).get('finish_reason')
-            updated = update_task_items_from_json(
+            updated = update_task_items_from_table(
                 cursor_local,
                 task['id_task'],
-                parsed_response,
-                expected_identifiers,
+                processing_table,
                 tokens_input_total,
                 tokens_output_total,
-                original_text_lookup,
                 response_ai_model,
                 response_finish_reason,
             )
