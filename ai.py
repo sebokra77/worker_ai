@@ -58,7 +58,7 @@ def main() -> None:
         task = get_next_task_to_ai(cursor_local)
         if not task:
             logger.info("Brak zadań do obsługi przez AI.")
-            print("Brak zadań do obsługi przez AI.")
+            print(f"\033[33mbrak zadań do AI\033[0m")
             return
 
         if not task.get('id_ai_model'):
@@ -109,7 +109,7 @@ def main() -> None:
                 "Brak rekordów do przetworzenia dla zadania ID=%s.",
                 task['id_task'],
             )
-            print("Brak rekordów pending dla zadania.")
+            print(f"\033[33mrekordów pending dla zadania\033[0m")
             return
 
         processing_table = build_processing_table(pending_items)

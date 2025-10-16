@@ -36,7 +36,7 @@ def main():
     #print(task)
     if not task:
         logger.info("Brak zadań do synchronizacji.")
-        print("Brak zadań do synchronizacji.")
+        print(f"\033[33mbrak zadań do synchronizacji\033[0m")
         return
     print("\033[32mOK\033[0m") 
     logger.info(f"Pobrano zadanie ID={task['id_task']} z bazy {task['id_database_connection']}")
@@ -113,7 +113,7 @@ def main():
             task.get('id_task'),
             stage,
         )
-        print("Brak zadań do prztworzenia.")
+        print(f"\033[33mbrak zadań do przetworzenia\033[0m")
 
     cursor_local.close()
     conn_local.close()
