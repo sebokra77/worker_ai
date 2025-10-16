@@ -1,3 +1,6 @@
+from typing import Any, Dict
+
+
 def get_next_task(cursor):
     """Pobiera najstarsze zadanie ze statusem new/in_progress/resync"""
     sql = """
@@ -85,3 +88,68 @@ def get_remote_db_params(cursor, id_database_connection):
     sql = "SELECT * FROM database_connection WHERE id_database_connection=%s"
     cursor.execute(sql, (id_database_connection,))
     return cursor.fetchone()
+
+
+def update_task_sync_progress(conn, id_task: int) -> Dict[str, Any]:
+    """Aktualizuje postęp synchronizacji po imporcie danych.
+
+    Args:
+        conn: Połączenie z bazą danych MySQL.
+        id_task (int): Identyfikator zadania wymagającego podsumowania.
+
+    Returns:
+        dict: Informacje o zliczonych rekordach oczekujących, obliczonym
+        progresie oraz wynikowym statusie zadania.
+    """
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # Zlicz liczbę rekordów oczekujących na dalsze etapy przetwarzania
+        cursor.execute(
+            "SELECT COUNT(*) AS pending_count FROM task_item WHERE id_task = %s AND status = 'pending'",
+            (id_task,),
+        )
+        pending_row = cursor.fetchone() or {}
+        pending_count = int(pending_row.get('pending_count') or 0)
+
+        # Pobierz aktualne liczniki zadania, aby policzyć procent synchronizacji
+        cursor.execute(
+            "SELECT records_fetched, records_total, records_processed, status FROM task WHERE id_task = %s",
+            (id_task,),
+        )
+        task_row = cursor.fetchone() or {}
+        records_fetched = int(task_row.get('records_fetched') or 0)
+        records_total = int(task_row.get('records_total') or 0)
+        records_processed = int(task_row.get('records_processed') or 0)
+        current_status = task_row.get('status')
+
+        sync_progress = 0.0
+        if records_total:
+            sync_progress = round((records_fetched / records_total) * 100, 2)
+
+        # Ustal docelowy status w zależności od liczników z zadania
+        target_status = current_status
+        if records_total and records_fetched == records_total:
+            target_status = 'ai'
+        if records_total and records_processed == records_total:
+            target_status = 'export'
+
+        # Przygotuj zapytanie aktualizujące postęp i ewentualnie status
+        update_columns = ["sync_progress = %s"]
+        params: list[Any] = [sync_progress]
+        if target_status and target_status != current_status:
+            update_columns.append("status = %s")
+            params.append(target_status)
+
+        update_sql = f"UPDATE task SET {', '.join(update_columns)} WHERE id_task = %s"
+        params.append(id_task)
+        cursor.execute(update_sql, tuple(params))
+        conn.commit()
+
+        return {
+            'pending_count': pending_count,
+            'sync_progress': sync_progress,
+            'status': target_status,
+        }
+    finally:
+        cursor.close()

@@ -4,7 +4,7 @@ from lib.load_config import load_env
 from lib.db_utils import log_error_and_print, setup_logger
 from lib.db_local import connect_local
 from lib.db_remote import connect_remote
-from lib.task import get_next_task, get_remote_db_params
+from lib.task import get_next_task, get_remote_db_params, update_task_sync_progress
 from lib.task_item import fetch_remote_batch, resynch_remote_batch
 
 def main():
@@ -70,8 +70,19 @@ def main():
                 error,
             )
         else:
-            logger.info("Synchronizacja zakończona.")
-            print("Synchronizacja zakończona.")
+            summary = update_task_sync_progress(conn_local, task['id_task'])
+            logger.info(
+                "Podsumowanie zadania ID=%s: pending=%s, postęp=%.2f%%, status=%s",
+                task['id_task'],
+                summary['pending_count'],
+                summary['sync_progress'],
+                summary['status'],
+            )
+            print(
+                "Synchronizacja zakończona. Oczekujące rekordy: "
+                f"{summary['pending_count']}, postęp: {summary['sync_progress']:.2f}%, "
+                f"status: {summary['status']}"
+            )
     elif stage in {"resynch"}:
         try:
             resynch_remote_batch(conn_local, conn_remote, task, cfg['BATCH_SIZE'], remote_params, logger)
@@ -83,8 +94,19 @@ def main():
                 error,
             )
         else:
-            logger.info("Synchronizacja zakończona.")
-            print("Synchronizacja zakończona.")
+            summary = update_task_sync_progress(conn_local, task['id_task'])
+            logger.info(
+                "Podsumowanie zadania ID=%s: pending=%s, postęp=%.2f%%, status=%s",
+                task['id_task'],
+                summary['pending_count'],
+                summary['sync_progress'],
+                summary['status'],
+            )
+            print(
+                "Synchronizacja zakończona. Oczekujące rekordy: "
+                f"{summary['pending_count']}, postęp: {summary['sync_progress']:.2f}%, "
+                f"status: {summary['status']}"
+            )
     else:
         logger.info(
             "Pominięto pobieranie rekordów dla zadania ID=%s na etapie %s.",
