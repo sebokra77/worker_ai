@@ -303,6 +303,8 @@ def update_task_items_from_json(
     tokens_input_total: Optional[int] = None,
     tokens_output_total: Optional[int] = None,
     original_texts: Optional[Dict[Any, Optional[str]]] = None,
+    ai_model_name: Optional[str] = None,
+    finish_reason_value: Optional[str] = None,
 ) -> int:
     """Aktualizuje rekordy ``task_item`` na podstawie danych z modelu AI.
 
@@ -315,6 +317,8 @@ def update_task_items_from_json(
         tokens_output_total (Optional[int]): Łączna liczba tokenów wyjściowych zwrócona przez model AI.
         original_texts (Optional[dict[Any, Optional[str]]]): Słownik mapujący identyfikatory rekordów
             na tekst oryginalny pobrany przed wywołaniem modelu.
+        ai_model_name (Optional[str]): Nazwa modelu AI zwrócona w odpowiedzi.
+        finish_reason_value (Optional[str]): Powód zakończenia generowania odpowiedzi.
 
     Returns:
         int: Liczba zaktualizowanych rekordów.
@@ -390,14 +394,16 @@ def update_task_items_from_json(
             cursor.execute(
                 (
                     "UPDATE task_item SET text_corrected = text_original, status = 'unchanged', "
-                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s "
-                    "WHERE id_task = %s AND "
+                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s, "
+                    "ai_model = %s, finish_reason = %s WHERE id_task = %s AND "
                     f"{identifier_column} = %s"
                 ),
                 (
                     100,
                     tokens_input_per_item,
                     tokens_output_per_item,
+                    ai_model_name,
+                    finish_reason_value,
                     id_task,
                     identifier_value,
                 ),
@@ -407,8 +413,8 @@ def update_task_items_from_json(
             cursor.execute(
                 (
                     "UPDATE task_item SET text_corrected = %s, status = 'changed', "
-                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s "
-                    "WHERE id_task = %s AND "
+                    "similarity_score = %s, processed_at = NOW(), tokens_input = %s, tokens_output = %s, "
+                    "ai_model = %s, finish_reason = %s WHERE id_task = %s AND "
                     f"{identifier_column} = %s"
                 ),
                 (
@@ -416,6 +422,8 @@ def update_task_items_from_json(
                     similarity_score,
                     tokens_input_per_item,
                     tokens_output_per_item,
+                    ai_model_name,
+                    finish_reason_value,
                     id_task,
                     identifier_value,
                 ),

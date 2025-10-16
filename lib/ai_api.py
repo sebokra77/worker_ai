@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from openai import OpenAI
 try:  # pragma: no cover - obsługa różnych wersji biblioteki
@@ -151,7 +151,7 @@ def build_api_request(
     return builder(model_config, prompt_with_instruction, params)
 
 
-def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int, str]:
+def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int, str, Dict[str, Any]]:
     """Wysyła zapytanie do dostawcy AI i zwraca odpowiedź wraz z metrykami tokenów."""
 
     if not request:
@@ -166,8 +166,9 @@ def execute_api_request(request: Dict[str, Any]) -> Tuple[str, int, int, str]:
     # Wysłanie zapytania bez zapamiętywania historii – każde żądanie zawiera tylko bieżący prompt
     response = callable_object(**payload)
     text_value, tokens_input, tokens_output = _extract_response_text(provider, response)
+    metadata = _extract_response_metadata(provider, response)
     raw_response = repr(response)
-    return text_value, tokens_input, tokens_output, raw_response
+    return text_value, tokens_input, tokens_output, raw_response, metadata
 
 
 def _fallback_model_check(provider: str, model_name: str) -> bool:
@@ -565,6 +566,74 @@ def _extract_response_text(provider: str | None, response: Any) -> Tuple[str, in
 
     tokens_input, tokens_output = _extract_usage_tokens(provider, response)
     return text_value, tokens_input, tokens_output
+
+
+def _extract_response_metadata(provider: str | None, response: Any) -> Dict[str, Any]:
+    """Wyciąga metadane z odpowiedzi modelu AI."""
+
+    model_name: Optional[str] = None
+    finish_reason: Optional[str] = None
+
+    if isinstance(response, dict):
+        model_name = response.get('model') or response.get('model_name')
+
+    if model_name is None:
+        model_name = getattr(response, 'model', None)
+        if model_name is None:
+            model_name = getattr(response, 'model_name', None)
+
+    if provider in {'OpenAI', 'DeepSeek'}:
+        choices = getattr(response, 'choices', None)
+        if choices is None and isinstance(response, dict):
+            choices = response.get('choices')
+        if choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                finish_reason = (
+                    first_choice.get('finish_reason')
+                    or first_choice.get('finishReason')
+                )
+            else:
+                finish_reason = (
+                    getattr(first_choice, 'finish_reason', None)
+                    or getattr(first_choice, 'finishReason', None)
+                )
+
+    if provider == 'Google' and finish_reason is None:
+        candidates = getattr(response, 'candidates', None)
+        if candidates is None and isinstance(response, dict):
+            candidates = response.get('candidates')
+        if candidates:
+            first_candidate = candidates[0]
+            if isinstance(first_candidate, dict):
+                finish_reason = (
+                    first_candidate.get('finish_reason')
+                    or first_candidate.get('finishReason')
+                )
+            else:
+                finish_reason = (
+                    getattr(first_candidate, 'finish_reason', None)
+                    or getattr(first_candidate, 'finishReason', None)
+                )
+
+    if provider == 'Anthropic' and finish_reason is None:
+        finish_reason = getattr(response, 'stop_reason', None)
+        if finish_reason is None and isinstance(response, dict):
+            finish_reason = response.get('stop_reason') or response.get('stopReason')
+
+    if finish_reason is None and isinstance(response, dict):
+        finish_reason = response.get('finish_reason') or response.get('finishReason')
+
+    if finish_reason is None:
+        finish_reason = (
+            getattr(response, 'finish_reason', None)
+            or getattr(response, 'finishReason', None)
+        )
+
+    return {
+        'model': model_name,
+        'finish_reason': finish_reason,
+    }
 
 
 def _extract_usage_tokens(provider: str | None, response: Any) -> Tuple[int, int]:
