@@ -31,14 +31,15 @@ def main() -> None:
 
     # Załaduj konfigurację i logger
     try:
-        print("Wczytywanie konfiguracji ")
+        print("Wczytywanie konfiguracji : ", end="")
         cfg = load_env()
+
     except ValueError as error:
         print(f"Błąd konfiguracji środowiska w pliku .env: {error}")
         sys.exit(1)
-
+    print("\033[32mOK\033[0m") 
+    
     logger = setup_logger('ai', 'logs/ai.log')
-    logger.info("=== Rozpoczęcie obsługi zadań AI ===")
 
     # Połączenie z bazą lokalną
     print("Łączenie z bazą lokalną ...", end="")
@@ -47,13 +48,13 @@ def main() -> None:
         print(" Error")
         log_error_and_print(logger, "Nie udało się połączyć z bazą lokalną.")
         sys.exit(1)
-    print(" OK")
+    print("\033[32mOK\033[0m") 
 
     cursor_local = conn_local.cursor(dictionary=True)
 
     try:
         # Pobierz zadanie oczekujące na obsługę
-        print("Pobieranie zadania ...")
+        print("Pobieranie zadania : ", end="")
         task = get_next_task(cursor_local)
         if not task:
             logger.info("Brak zadań do obsługi przez AI.")
@@ -67,7 +68,8 @@ def main() -> None:
             )
             print("Zadanie nie ma przypisanego modelu AI.")
             return
-
+            
+        print("\033[32mOK\033[0m") 
         # Pobierz konfigurację modelu
         ai_model = fetch_ai_model_config(cursor_local, task['id_ai_model'])
         if not ai_model:
