@@ -15,7 +15,7 @@ def main():
     except ValueError as error:
         print(f"Błąd konfiguracji środowiska w pliku .env: {error}")
         sys.exit(1)
-    print("\033[32mOK\033[0m") 
+    print(f"\033[32mOK\033[0m") 
 
     logger = setup_logger('sync', 'logs/sync.log')
     
@@ -26,7 +26,7 @@ def main():
         print(" Error")
         log_error_and_print(logger, "Nie udało się połączyć z bazą lokalną.")
         sys.exit(1)
-    print("\033[32mOK\033[0m") 
+    print(f"\033[32mOK\033[0m") 
     
     cursor_local = conn_local.cursor(dictionary=True)
 
@@ -38,7 +38,7 @@ def main():
         logger.info("Brak zadań do synchronizacji.")
         print(f"\033[33mbrak zadań do synchronizacji\033[0m")
         return
-    print("\033[32mOK\033[0m") 
+    print(f"\033[32mOK\033[0m") 
     logger.info(f"Pobrano zadanie ID={task['id_task']} z bazy {task['id_database_connection']}")
 
     # Pobierz parametry połączenia z bazy zewnętrznej
@@ -55,7 +55,7 @@ def main():
     print("Łącznie z DB remote : ", end="")
     conn_remote = connect_remote(remote_params)
     logger.info(f"Nawiązano połączenie z bazą zewnętrzną typu: {remote_params['db_type']}")
-    print("OK")
+    print(f"\033[32mOK\033[0m") 
 
     print("Rozpoczynam synchronizację ...")
     stage = task.get('sync_stage')
